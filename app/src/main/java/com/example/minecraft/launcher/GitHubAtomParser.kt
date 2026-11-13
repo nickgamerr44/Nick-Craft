@@ -38,14 +38,19 @@ object GitHubAtomParser {
         val authorName = extractAuthorName(el)
         val rawContent = childText(el, "content")
         val cleanContent = rawContent
-          .replace(Regex("<[^>]+>"), " ")
+          .replace(Regex("(?i)<br\\s*/?>"), "\n")
+          .replace(Regex("(?i)</(p|li|div|h[1-6]|tr)>"), "\n")
+          .replace(Regex("(?i)<li[^>]*>"), "• ")
+          .replace(Regex("<[^>]+>"), "")
           .replace("&amp;", "&")
           .replace("&lt;", "<")
           .replace("&gt;", ">")
           .replace("&quot;", "\"")
           .replace("&#39;", "'")
-          .replace(Regex("\\s+"), " ")
-          .trim()
+          .lines()
+          .map { it.trim().replace(Regex("[ \\t]+"), " ") }
+          .filter { it.isNotEmpty() }
+          .joinToString("\n")
 
         entries.add(
           AtomEntry(

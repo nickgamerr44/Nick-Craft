@@ -60,6 +60,11 @@ class VoxelRenderer(
 
   private var wireframeBuffer: FloatBuffer? = null
   private var mobCubeBuffer: FloatBuffer? = null
+  private val boxFloatArray = FloatArray(36 * 6)
+  private val boxFloatBuffer: FloatBuffer = ByteBuffer
+    .allocateDirect(36 * 6 * 4)
+    .order(ByteOrder.nativeOrder())
+    .asFloatBuffer()
 
   override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
     GLES20.glClearColor(0.45f, 0.65f, 0.95f, 1.0f)
@@ -482,8 +487,8 @@ class VoxelRenderer(
     GLES20.glUniform1i(uTextureLoc, 0)
     GLES20.glUniform1f(uSunlightLoc, max(0.40f, sunlight))
 
-    val legSwing = sin(player.walkBobbing.toDouble()).toFloat() * 28f
-    val armSwing = sin(player.walkBobbing.toDouble()).toFloat() * 28f
+    val legSwing = sin(player.walkBobbing.toDouble()).toFloat() * 28f * player.limbSwingWeight
+    val armSwing = sin(player.walkBobbing.toDouble()).toFloat() * 28f * player.limbSwingWeight
     val attackSwing = player.swingProgress * 65f
 
     // 1. Steve Head (articulated with pitch and yaw)
@@ -493,8 +498,8 @@ class VoxelRenderer(
     Matrix.rotateM(modelMatrix, 0, player.pitch, 1f, 0f, 0f)
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
     Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
-    // top=34(hair top), bot=34, north=35(hair back), south=29(face), west=36(side), east=36(side)
-    drawTexturedBox(mvpMatrix, 0.20f, 0.20f, 0.20f, 34, 34, 35, 29, 36, 36)
+    // top=34(hair top), bot=38(skin chin), north=35(hair back), south=29(face), west=36(side), east=36(side)
+    drawTexturedBox(mvpMatrix, 0.20f, 0.20f, 0.20f, 34, 38, 35, 29, 36, 36)
 
     // 2. Steve Torso (Cyan T-Shirt)
     Matrix.setIdentityM(modelMatrix, 0)
@@ -502,8 +507,8 @@ class VoxelRenderer(
     Matrix.rotateM(modelMatrix, 0, -player.yaw, 0f, 1f, 0f)
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
     Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
-    // top=30, bot=30, north=31(back), south=30(front), west=31, east=31
-    drawTexturedBox(mvpMatrix, 0.20f, 0.30f, 0.11f, 30, 30, 31, 30, 31, 31)
+    // top=31(solid shirt), bot=31(solid shirt), north=31(back), south=30(front with neck), west=31, east=31
+    drawTexturedBox(mvpMatrix, 0.20f, 0.30f, 0.11f, 31, 31, 31, 30, 31, 31)
 
     // 3. Left Arm (hinged at shoulder 1.15m height)
     Matrix.setIdentityM(modelMatrix, 0)
@@ -514,7 +519,7 @@ class VoxelRenderer(
     Matrix.translateM(modelMatrix, 0, 0f, -0.26f, 0f)
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
     Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
-    drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 32, 32, 32, 32, 32, 32)
+    drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
 
     // 4. Right Arm (hinged at shoulder 1.15m height, with attack swing & walking swing)
     Matrix.setIdentityM(modelMatrix, 0)
@@ -525,7 +530,7 @@ class VoxelRenderer(
     Matrix.translateM(modelMatrix, 0, 0f, -0.26f, 0f)
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
     Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
-    drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 32, 32, 32, 32, 32, 32)
+    drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
 
     // 3D Held Item in Steve's Right Hand
     val held = player.inventory.selectedItem?.item
@@ -629,7 +634,7 @@ class VoxelRenderer(
     // Disable culling to ensure 100% solid geometry from any perspective
     GLES20.glDisable(GLES20.GL_CULL_FACE)
 
-    val list = ArrayList<Float>(36 * 6)
+    var idx = 0
 
     fun addQuad(
       x0: Float, y0: Float, z0: Float, u0: Float, v0: Float,
@@ -639,13 +644,13 @@ class VoxelRenderer(
       shade: Float
     ) {
       // Triangle 1: 0, 1, 2
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
-      list.add(x1); list.add(y1); list.add(z1); list.add(u1); list.add(v1); list.add(shade)
-      list.add(x2); list.add(y2); list.add(z2); list.add(u2); list.add(v2); list.add(shade)
+      boxFloatArray[idx++] = x0; boxFloatArray[idx++] = y0; boxFloatArray[idx++] = z0; boxFloatArray[idx++] = u0; boxFloatArray[idx++] = v0; boxFloatArray[idx++] = shade
+      boxFloatArray[idx++] = x1; boxFloatArray[idx++] = y1; boxFloatArray[idx++] = z1; boxFloatArray[idx++] = u1; boxFloatArray[idx++] = v1; boxFloatArray[idx++] = shade
+      boxFloatArray[idx++] = x2; boxFloatArray[idx++] = y2; boxFloatArray[idx++] = z2; boxFloatArray[idx++] = u2; boxFloatArray[idx++] = v2; boxFloatArray[idx++] = shade
       // Triangle 2: 0, 2, 3
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
-      list.add(x2); list.add(y2); list.add(z2); list.add(u2); list.add(v2); list.add(shade)
-      list.add(x3); list.add(y3); list.add(z3); list.add(u3); list.add(v3); list.add(shade)
+      boxFloatArray[idx++] = x0; boxFloatArray[idx++] = y0; boxFloatArray[idx++] = z0; boxFloatArray[idx++] = u0; boxFloatArray[idx++] = v0; boxFloatArray[idx++] = shade
+      boxFloatArray[idx++] = x2; boxFloatArray[idx++] = y2; boxFloatArray[idx++] = z2; boxFloatArray[idx++] = u2; boxFloatArray[idx++] = v2; boxFloatArray[idx++] = shade
+      boxFloatArray[idx++] = x3; boxFloatArray[idx++] = y3; boxFloatArray[idx++] = z3; boxFloatArray[idx++] = u3; boxFloatArray[idx++] = v3; boxFloatArray[idx++] = shade
     }
 
     // 1. Top (+Y, shade 1.0)
@@ -708,22 +713,18 @@ class VoxelRenderer(
       0.65f
     )
 
-    val arr = FloatArray(list.size)
-    for (i in list.indices) arr[i] = list[i]
-    val bb = ByteBuffer.allocateDirect(arr.size * 4).order(ByteOrder.nativeOrder())
-    val buf = bb.asFloatBuffer()
-    buf.put(arr)
-    buf.position(0)
+    boxFloatBuffer.clear()
+    boxFloatBuffer.put(boxFloatArray)
+    boxFloatBuffer.position(0)
 
-    buf.position(0)
     GLES20.glEnableVertexAttribArray(aPositionLoc)
-    GLES20.glVertexAttribPointer(aPositionLoc, 3, GLES20.GL_FLOAT, false, 6 * 4, buf)
-    buf.position(3)
+    GLES20.glVertexAttribPointer(aPositionLoc, 3, GLES20.GL_FLOAT, false, 6 * 4, boxFloatBuffer)
+    boxFloatBuffer.position(3)
     GLES20.glEnableVertexAttribArray(aTexCoordLoc)
-    GLES20.glVertexAttribPointer(aTexCoordLoc, 2, GLES20.GL_FLOAT, false, 6 * 4, buf)
-    buf.position(5)
+    GLES20.glVertexAttribPointer(aTexCoordLoc, 2, GLES20.GL_FLOAT, false, 6 * 4, boxFloatBuffer)
+    boxFloatBuffer.position(5)
     GLES20.glEnableVertexAttribArray(aShadeLoc)
-    GLES20.glVertexAttribPointer(aShadeLoc, 1, GLES20.GL_FLOAT, false, 6 * 4, buf)
+    GLES20.glVertexAttribPointer(aShadeLoc, 1, GLES20.GL_FLOAT, false, 6 * 4, boxFloatBuffer)
 
     GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 36)
 
@@ -737,13 +738,15 @@ class VoxelRenderer(
 
     val snapshot = synchronized(world.particles) { ArrayList(world.particles) }
     for (p in snapshot) {
+      val lifeScale = (p.lifetime.toFloat() / p.maxLifetime.coerceAtLeast(1).toFloat()).coerceIn(0.25f, 1.0f)
       Matrix.setIdentityM(modelMatrix, 0)
       Matrix.translateM(modelMatrix, 0, p.x, p.y, p.z)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
 
-      val half = p.size * 0.5f
-      drawTexturedBox(mvpMatrix, half, half, half, 2, 2, 2, 2, 2, 2)
+      val half = p.size * 0.5f * lifeScale
+      val t = p.tileIndex
+      drawTexturedBox(mvpMatrix, half, half, half, t, t, t, t, t, t)
     }
   }
 

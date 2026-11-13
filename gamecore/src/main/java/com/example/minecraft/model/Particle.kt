@@ -10,8 +10,9 @@ class Particle(
   val r: Float,
   val g: Float,
   val b: Float,
-  val size: Float = 0.08f,
-  var lifetime: Int = 30
+  val size: Float = 0.07f,
+  var lifetime: Int = 14,
+  val tileIndex: Int = 2
 ) {
   val maxLifetime = lifetime
 

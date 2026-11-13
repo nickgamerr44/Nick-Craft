@@ -66,7 +66,7 @@ fun NickCraftLauncherApp() {
 
   var currentScreen by remember { mutableStateOf(AppScreen.LAUNCHER) }
   var activeWorldInfo by remember { mutableStateOf<WorldInfo?>(null) }
-  var activeVersionTag by remember { mutableStateOf("0.00") }
+  var activeVersionTag by remember { mutableStateOf("0.01") }
 
   when (currentScreen) {
     AppScreen.LAUNCHER -> {

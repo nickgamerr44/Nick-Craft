@@ -136,16 +136,19 @@ class VoxelWorld(
             if (b != BlockType.AIR && !b.isUnbreakable) {
               setBlock(bx, by, bz, BlockType.AIR)
               // Spawn particles
-              if (particles.size < 120 && dist < radius * 0.8f) {
-                particles.add(
-                  Particle(
-                    bx + 0.5f, by + 0.5f, bz + 0.5f,
-                    dx * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f,
-                    dy * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f + 0.1f,
-                    dz * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f,
-                    0.9f, 0.4f, 0.1f, 0.15f, 25
+              synchronized(particles) {
+                if (particles.size < 40 && dist < radius * 0.8f) {
+                  particles.add(
+                    Particle(
+                      bx + 0.5f, by + 0.5f, bz + 0.5f,
+                      dx * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f,
+                      dy * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f + 0.1f,
+                      dz * 0.08f + (Math.random().toFloat() - 0.5f) * 0.1f,
+                      0.9f, 0.4f, 0.1f, 0.10f, 16,
+                      b.sideTextureIndex
+                    )
                   )
-                )
+                }
               }
             }
           }
@@ -164,7 +167,7 @@ class VoxelWorld(
   }
 
   fun spawnBreakParticles(bx: Int, by: Int, bz: Int, block: BlockType) {
-    val count = 8
+    val count = 6
     val (r, g, b) = when (block) {
       BlockType.GRASS -> Triple(0.2f, 0.7f, 0.2f)
       BlockType.DIRT -> Triple(0.5f, 0.35f, 0.2f)
@@ -178,27 +181,35 @@ class VoxelWorld(
       else -> Triple(0.5f, 0.5f, 0.5f)
     }
 
-    for (i in 0 until count) {
-      particles.add(
-        Particle(
-          bx + 0.2f + Math.random().toFloat() * 0.6f,
-          by + 0.2f + Math.random().toFloat() * 0.6f,
-          bz + 0.2f + Math.random().toFloat() * 0.6f,
-          (Math.random().toFloat() - 0.5f) * 0.12f,
-          Math.random().toFloat() * 0.12f + 0.05f,
-          (Math.random().toFloat() - 0.5f) * 0.12f,
-          r, g, b, 0.07f, 20
+    val tile = block.sideTextureIndex
+    synchronized(particles) {
+      while (particles.size > 30) {
+        particles.removeAt(0)
+      }
+      for (i in 0 until count) {
+        particles.add(
+          Particle(
+            bx + 0.25f + Math.random().toFloat() * 0.5f,
+            by + 0.25f + Math.random().toFloat() * 0.5f,
+            bz + 0.25f + Math.random().toFloat() * 0.5f,
+            (Math.random().toFloat() - 0.5f) * 0.11f,
+            Math.random().toFloat() * 0.10f + 0.04f,
+            (Math.random().toFloat() - 0.5f) * 0.11f,
+            r, g, b, 0.06f, 14, tile
+          )
         )
-      )
+      }
     }
   }
 
   fun updateParticles() {
-    val iter = particles.iterator()
-    while (iter.hasNext()) {
-      val p = iter.next()
-      if (!p.update(this)) {
-        iter.remove()
+    synchronized(particles) {
+      val iter = particles.iterator()
+      while (iter.hasNext()) {
+        val p = iter.next()
+        if (!p.update(this)) {
+          iter.remove()
+        }
       }
     }
   }

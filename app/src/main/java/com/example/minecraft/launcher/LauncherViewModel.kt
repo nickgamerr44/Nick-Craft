@@ -18,12 +18,14 @@ class LauncherViewModel(
 ) : ViewModel() {
 
   private val initialOfflineVersions = repository.listDownloadedVersionsOffline()
+  private val initialCachedNews = repository.listCachedNewsOffline()
 
   private val _uiState = MutableStateFlow(
     LauncherUiState(
       syncStatus = RepoSyncStatus.Loading,
       versions = initialOfflineVersions,
-      selectedVersionId = initialOfflineVersions.firstOrNull()?.id.orEmpty()
+      selectedVersionId = initialOfflineVersions.firstOrNull()?.id.orEmpty(),
+      news = initialCachedNews
     )
   )
   val uiState: StateFlow<LauncherUiState> = _uiState.asStateFlow()
@@ -46,6 +48,7 @@ class LauncherViewModel(
           repoInfo = result.repoInfo,
           versions = result.versions,
           selectedVersionId = if (stillValidSelection) current.selectedVersionId else fallbackSelection,
+          news = result.news,
           commits = result.commits,
           lastUpdatedLabel = timeStr
         )

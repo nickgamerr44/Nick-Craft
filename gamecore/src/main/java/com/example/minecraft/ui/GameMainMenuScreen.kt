@@ -39,7 +39,7 @@ import com.example.minecraft.model.GameMode
 @Composable
 fun GameMainMenuScreen(
   storage: WorldStorage,
-  versionTag: String = "0.00",
+  versionTag: String = "0.01",
   onStartGame: (worldName: String, gameMode: GameMode, seed: Long, worldId: String?) -> Unit,
   onExitToLauncher: (() -> Unit)? = null
 ) {

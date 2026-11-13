@@ -9,6 +9,7 @@ enum class VersionSource(val label: String) {
 
 enum class LauncherTab {
   VERSIONS,
+  NEWS,
   CHANGELOG
 }
 
@@ -58,6 +59,17 @@ data class CommitEntry(
   val htmlUrl: String
 )
 
+data class UpdateNewsEntry(
+  val id: String,
+  val versionTag: String,
+  val title: String,
+  val dateLabel: String,
+  val highlights: List<String>,
+  val summary: String,
+  val htmlUrl: String,
+  val isLatest: Boolean = false
+)
+
 sealed interface RepoSyncStatus {
   data object Loading : RepoSyncStatus
   data class Loaded(val isOnline: Boolean) : RepoSyncStatus
@@ -69,6 +81,7 @@ data class LauncherUiState(
   val repoInfo: GitHubRepoInfo? = null,
   val versions: List<GameVersionEntry> = emptyList(),
   val selectedVersionId: String = "",
+  val news: List<UpdateNewsEntry> = emptyList(),
   val commits: List<CommitEntry> = emptyList(),
   val activeTab: LauncherTab = LauncherTab.VERSIONS,
   val lastUpdatedLabel: String? = null,

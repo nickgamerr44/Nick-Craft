@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 data class LauncherFetchResult(
   val repoInfo: GitHubRepoInfo?,
   val versions: List<GameVersionEntry>,
+  val news: List<UpdateNewsEntry>,
   val commits: List<CommitEntry>,
   val syncStatus: RepoSyncStatus
 )
@@ -26,6 +27,7 @@ data class LauncherFetchResult(
 private data class CachedRepoSnapshot(
   val repoInfo: GitHubRepoInfo?,
   val versions: List<GameVersionEntry>,
+  val news: List<UpdateNewsEntry> = emptyList(),
   val commits: List<CommitEntry>
 )
 
@@ -69,6 +71,10 @@ class GitHubLauncherRepository(
 
   fun listDownloadedVersionsOffline(): List<GameVersionEntry> {
     return mergeWithOfflineDownloaded(listDownloadedManifests(), readCachedSnapshot())
+  }
+
+  fun listCachedNewsOffline(): List<UpdateNewsEntry> {
+    return readCachedSnapshot()?.news.orEmpty()
   }
 
   private fun readCachedSnapshot(): CachedRepoSnapshot? {
@@ -137,6 +143,7 @@ class GitHubLauncherRepository(
           return@coroutineScope LauncherFetchResult(
             repoInfo = cachedSnapshot?.repoInfo,
             versions = offlineList,
+            news = cachedSnapshot?.news.orEmpty(),
             commits = cachedSnapshot?.commits.orEmpty(),
             syncStatus = RepoSyncStatus.Error(message = msg, isNotFound = code == 404)
           )
@@ -284,7 +291,7 @@ class GitHubLauncherRepository(
         discovered.add(
           GameVersionEntry(
             id = id,
-            versionTag = "0.00",
+            versionTag = "0.01",
             title = "Nick Craft ($branch)",
             source = VersionSource.GITHUB_BRANCH,
             description = if (latestSha != null)
@@ -301,11 +308,42 @@ class GitHubLauncherRepository(
         )
       }
 
+      val branch = repoInfo?.defaultBranch?.ifBlank { "main" } ?: "main"
+      val releaseNews = if (releasesRes.isSuccessful) {
+        releasesRes.body().orEmpty().filter { !it.draft }.map { rel ->
+          val tag = rel.tagName.ifBlank { "Release" }
+          val body = rel.body.orEmpty().trim()
+          val parsed = parseMarkdownBulletsAndSummary(body)
+          UpdateNewsEntry(
+            id = "news_rel_${rel.id}",
+            versionTag = tag,
+            title = rel.name?.takeIf { it.isNotBlank() } ?: "Atualização $tag",
+            dateLabel = formatIsoDate(rel.publishedAt),
+            highlights = parsed.first,
+            summary = parsed.second.ifBlank { "Atualização publicada em $owner/$repo." },
+            htmlUrl = rel.htmlUrl.ifBlank { LauncherUiState.REPO_HTML_URL }
+          )
+        }
+      } else {
+        emptyList()
+      }
+
+      val changelogNews = withContext(Dispatchers.IO) {
+        fetchChangelogNewsFromRaw(owner, repo, branch)
+      }
+      val news = buildCombinedNews(
+        releaseNews = releaseNews,
+        changelogNews = changelogNews,
+        commits = commits,
+        repoUrl = repoInfo?.htmlUrl ?: LauncherUiState.REPO_HTML_URL
+      )
+
       withContext(Dispatchers.IO) {
         saveCachedSnapshot(
           CachedRepoSnapshot(
             repoInfo = repoInfo,
             versions = discovered,
+            news = news,
             commits = commits
           )
         )
@@ -314,6 +352,7 @@ class GitHubLauncherRepository(
       LauncherFetchResult(
         repoInfo = repoInfo,
         versions = discovered,
+        news = news,
         commits = commits,
         syncStatus = RepoSyncStatus.Loaded(isOnline = true)
       )
@@ -322,6 +361,7 @@ class GitHubLauncherRepository(
       LauncherFetchResult(
         repoInfo = cachedSnapshot?.repoInfo,
         versions = offlineList,
+        news = cachedSnapshot?.news.orEmpty(),
         commits = cachedSnapshot?.commits.orEmpty(),
         syncStatus = RepoSyncStatus.Error(
           message = "Sem conexão com o GitHub. Exibindo versões já baixadas/em cache.",
@@ -333,6 +373,7 @@ class GitHubLauncherRepository(
       LauncherFetchResult(
         repoInfo = cachedSnapshot?.repoInfo,
         versions = offlineList,
+        news = cachedSnapshot?.news.orEmpty(),
         commits = cachedSnapshot?.commits.orEmpty(),
         syncStatus = RepoSyncStatus.Error(
           message = "Falha ao carregar versões: ${e.localizedMessage ?: "erro desconhecido"}",
@@ -474,7 +515,7 @@ class GitHubLauncherRepository(
         discovered.add(
           GameVersionEntry(
             id = id,
-            versionTag = "0.00",
+            versionTag = "0.01",
             title = "Nick Craft ($branch)",
             source = VersionSource.GITHUB_BRANCH,
             description = if (latestSha != null)
@@ -491,10 +532,34 @@ class GitHubLauncherRepository(
         )
       }
 
+      val releaseNews = releaseEntries.map { rel ->
+        val tag = rel.link.substringAfterLast('/').ifBlank {
+          rel.id.substringAfterLast('/').ifBlank { rel.title }
+        }
+        val parsed = parseMarkdownBulletsAndSummary(rel.contentText)
+        UpdateNewsEntry(
+          id = "news_atom_${tag.replace(Regex("[^a-zA-Z0-9._-]"), "_")}",
+          versionTag = tag,
+          title = rel.title.ifBlank { "Atualização $tag" },
+          dateLabel = formatIsoDate(rel.updated),
+          highlights = parsed.first,
+          summary = parsed.second.ifBlank { "Atualização publicada em $owner/$repo." },
+          htmlUrl = rel.link.ifBlank { repoInfo.htmlUrl }
+        )
+      }
+      val changelogNews = fetchChangelogNewsFromRaw(owner, repo, "main")
+      val news = buildCombinedNews(
+        releaseNews = releaseNews,
+        changelogNews = changelogNews,
+        commits = commits,
+        repoUrl = repoInfo.htmlUrl
+      )
+
       saveCachedSnapshot(
         CachedRepoSnapshot(
           repoInfo = repoInfo,
           versions = discovered,
+          news = news,
           commits = commits
         )
       )
@@ -502,6 +567,7 @@ class GitHubLauncherRepository(
       LauncherFetchResult(
         repoInfo = repoInfo,
         versions = discovered,
+        news = news,
         commits = commits,
         syncStatus = RepoSyncStatus.Loaded(isOnline = true)
       )
@@ -510,12 +576,140 @@ class GitHubLauncherRepository(
     }
   }
 
+  private fun fetchChangelogNewsFromRaw(
+    owner: String,
+    repo: String,
+    branch: String
+  ): List<UpdateNewsEntry> {
+    val candidates = listOf("NOVIDADES.md", "CHANGELOG.md")
+    for (filename in candidates) {
+      val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$filename"
+      val text = fetchTextUrl(rawUrl)
+      if (!text.isNullOrBlank()) {
+        val parsed = parseChangelogMarkdown(
+          markdown = text,
+          htmlUrl = "https://github.com/$owner/$repo/blob/$branch/$filename"
+        )
+        if (parsed.isNotEmpty()) return parsed
+      }
+    }
+    return emptyList()
+  }
+
+  private fun parseChangelogMarkdown(
+    markdown: String,
+    htmlUrl: String
+  ): List<UpdateNewsEntry> {
+    val result = mutableListOf<UpdateNewsEntry>()
+    var currentHeading: String? = null
+    val currentLines = mutableListOf<String>()
+
+    fun flushSection() {
+      val heading = currentHeading ?: return
+      val body = currentLines.joinToString("\n").trim()
+      val (highlights, summary) = parseMarkdownBulletsAndSummary(body)
+      if (highlights.isNotEmpty() || summary.isNotBlank()) {
+        val versionMatch = Regex("(\\d+\\.\\d+(?:\\.\\d+)?)").find(heading)
+        val tag = versionMatch?.value ?: heading.take(14)
+        val cleanTitle = heading.replace(Regex("[\\[\\]#]"), "").trim()
+        val dateMatch = Regex("(\\d{2}/\\d{2}/\\d{4}|\\d{4}-\\d{2}-\\d{2})").find(heading)
+        val dateLabel = dateMatch?.value?.let {
+          if (it.contains("-")) formatIsoDate(it) else it
+        } ?: "GitHub Changelog"
+        result.add(
+          UpdateNewsEntry(
+            id = "news_md_${tag.replace(Regex("[^a-zA-Z0-9._-]"), "_")}",
+            versionTag = tag,
+            title = cleanTitle,
+            dateLabel = dateLabel,
+            highlights = highlights,
+            summary = summary,
+            htmlUrl = htmlUrl
+          )
+        )
+      }
+    }
+
+    for (line in markdown.lines()) {
+      val trimmed = line.trim()
+      if (trimmed.startsWith("## ")) {
+        flushSection()
+        currentHeading = trimmed.removePrefix("## ").trim()
+        currentLines.clear()
+      } else if (currentHeading != null) {
+        currentLines.add(line)
+      }
+    }
+    flushSection()
+    return result
+  }
+
+  private fun parseMarkdownBulletsAndSummary(rawText: String): Pair<List<String>, String> {
+    if (rawText.isBlank()) return emptyList<String>() to ""
+    val bullets = mutableListOf<String>()
+    val paragraphs = mutableListOf<String>()
+    for (rawLine in rawText.lines()) {
+      val trimmed = rawLine.trim()
+      if (trimmed.isBlank() || trimmed.startsWith("#")) continue
+      when {
+        trimmed.startsWith("- ") || trimmed.startsWith("* ") || trimmed.startsWith("• ") -> {
+          val item = trimmed.drop(2).replace("**", "").trim()
+          if (item.isNotEmpty()) bullets.add(item)
+        }
+        else -> paragraphs.add(trimmed.replace("**", ""))
+      }
+    }
+    return bullets to paragraphs.joinToString(" ").trim()
+  }
+
+  private fun buildCombinedNews(
+    releaseNews: List<UpdateNewsEntry>,
+    changelogNews: List<UpdateNewsEntry>,
+    commits: List<CommitEntry>,
+    repoUrl: String
+  ): List<UpdateNewsEntry> {
+    val combined = linkedMapOf<String, UpdateNewsEntry>()
+    fun normalizeTag(tag: String): String = tag.trim().lowercase().removePrefix("v")
+
+    for (entry in releaseNews) {
+      val key = normalizeTag(entry.versionTag)
+      val mdMatch = changelogNews.firstOrNull { normalizeTag(it.versionTag) == key }
+      val mergedHighlights = (entry.highlights + mdMatch?.highlights.orEmpty()).distinct()
+      val mergedSummary = entry.summary.ifBlank { mdMatch?.summary.orEmpty() }
+      combined[key] = entry.copy(highlights = mergedHighlights, summary = mergedSummary)
+    }
+
+    for (mdEntry in changelogNews) {
+      val key = normalizeTag(mdEntry.versionTag)
+      if (!combined.containsKey(key)) {
+        combined[key] = mdEntry
+      }
+    }
+
+    if (combined.isEmpty() && commits.isNotEmpty()) {
+      val commitHighlights = commits.take(6).map { "${it.shaShort}: ${it.message}" }
+      combined["latest_commits"] = UpdateNewsEntry(
+        id = "news_commits_latest",
+        versionTag = commits.first().shaShort,
+        title = "Últimas atualizações no GitHub",
+        dateLabel = commits.first().dateLabel,
+        highlights = commitHighlights,
+        summary = "Alterações recentes publicadas em ${LauncherUiState.REPO_OWNER}/${LauncherUiState.REPO_NAME}.",
+        htmlUrl = repoUrl
+      )
+    }
+
+    return combined.values.mapIndexed { idx, item ->
+      item.copy(isLatest = idx == 0)
+    }
+  }
+
   private fun fetchTextUrl(url: String): String? {
     return runCatching {
       val req = Request.Builder()
         .url(url)
-        .header("Accept", "application/atom+xml, application/xml, text/xml, */*")
-        .header("User-Agent", "NickCraftLauncher/0.00")
+        .header("Accept", "application/atom+xml, application/xml, text/xml, text/plain, */*")
+        .header("User-Agent", "NickCraftLauncher/1.1")
         .build()
       httpClient.newCall(req).execute().use { res ->
         if (res.isSuccessful) res.body?.string() else null
@@ -583,7 +777,7 @@ class GitHubLauncherRepository(
       if (!dataUrl.isNullOrBlank()) {
         val request = Request.Builder()
           .url(dataUrl)
-          .header("User-Agent", "NickCraftLauncher/0.00")
+          .header("User-Agent", "NickCraftLauncher/1.1")
           .build()
 
         httpClient.newCall(request).execute().use { response ->
@@ -677,7 +871,7 @@ class GitHubLauncherRepository(
         .addInterceptor { chain ->
           val original = chain.request()
           val reqBuilder = original.newBuilder()
-            .header("User-Agent", "NickCraftLauncher/0.00")
+            .header("User-Agent", "NickCraftLauncher/1.1")
           if (original.url.host == "api.github.com" && original.header("Accept") == null) {
             reqBuilder.header("Accept", "application/vnd.github+json")
           }

@@ -189,6 +189,9 @@ class ExampleUnitTest {
     assertEquals(VersionSource.GITHUB_VERSIONS_DIR, result.versions[1].source)
     assertEquals(VersionSource.GITHUB_TAG, result.versions[2].source)
     assertEquals(1, result.commits.size)
+    assertTrue(result.news.isNotEmpty())
+    assertEquals("v0.01", result.news[0].versionTag)
+    assertTrue(result.news[0].isLatest)
   }
 
   @Test
@@ -342,5 +345,114 @@ class ExampleUnitTest {
     assertEquals(1, result.commits.size)
     assertEquals("abcdef1", result.commits[0].shaShort)
     assertEquals("Add new blocks", result.commits[0].message)
+    assertTrue(result.news.any { it.versionTag == "v0.02" && it.summary.contains("Versao 0.02 no Atom") })
+  }
+
+  @Test
+  fun testPlayerLimbSwingResetsToIdleWhenStoppingForwardOrBackward() {
+    val world = VoxelWorld(32, 16, 32)
+    for (x in 0 until 32) {
+      for (z in 0 until 32) {
+        world.setBlock(x, 4, z, BlockType.STONE)
+      }
+    }
+    val player = Player(16.5f, 5.0f, 16.5f)
+    player.isOnGround = true
+
+    // Walk forward
+    repeat(10) {
+      player.update(world, moveForward = 1f, moveStrafe = 0f, jumpHeld = false, descendHeld = false)
+    }
+    assertTrue("limbSwingWeight should increase while walking forward", player.limbSwingWeight > 0.5f)
+
+    // Stop walking: limbs must smoothly decay back to exact 0f idle
+    repeat(10) {
+      player.update(world, moveForward = 0f, moveStrafe = 0f, jumpHeld = false, descendHeld = false)
+    }
+    assertEquals(0f, player.limbSwingWeight, 0.0001f)
+    assertEquals(0f, player.walkBobbing, 0.0001f)
+
+    // Walk backward
+    repeat(10) {
+      player.update(world, moveForward = -1f, moveStrafe = 0f, jumpHeld = false, descendHeld = false)
+    }
+    assertTrue("limbSwingWeight should increase while walking backward", player.limbSwingWeight > 0.5f)
+
+    // Stop walking backward
+    repeat(10) {
+      player.update(world, moveForward = 0f, moveStrafe = 0f, jumpHeld = false, descendHeld = false)
+    }
+    assertEquals(0f, player.limbSwingWeight, 0.0001f)
+    assertEquals(0f, player.walkBobbing, 0.0001f)
+  }
+
+  @Test
+  fun testBlockBreakParticlesUseBlockTextureAndExpireQuickly() {
+    val world = VoxelWorld(16, 16, 16)
+    world.spawnBreakParticles(8, 5, 8, BlockType.STONE)
+    assertTrue(world.particles.isNotEmpty())
+    assertTrue(world.particles.all { it.tileIndex == BlockType.STONE.sideTextureIndex })
+
+    // Tick enough frames so every particle reaches lifetime <= 0 and gets removed
+    repeat(20) {
+      world.updateParticles()
+    }
+    assertTrue("All block break particles must expire cleanly", world.particles.isEmpty())
+  }
+
+  @Test
+  fun testLauncherParsesChangelogMarkdownForNovidades() = runTest {
+    val rateLimitedApi = object : GitHubApiService {
+      override suspend fun getRepository(owner: String, repo: String): Response<GitHubRepoDto> =
+        Response.error(403, "rate limit".toResponseBody())
+      override suspend fun getReleases(owner: String, repo: String, perPage: Int): Response<List<GitHubReleaseDto>> =
+        Response.error(403, "rate limit".toResponseBody())
+      override suspend fun getTags(owner: String, repo: String, perPage: Int): Response<List<GitHubTagDto>> =
+        Response.error(403, "rate limit".toResponseBody())
+      override suspend fun getContents(owner: String, repo: String, path: String): Response<List<GitHubContentDto>> =
+        Response.error(403, "rate limit".toResponseBody())
+      override suspend fun getCommits(owner: String, repo: String, perPage: Int): Response<List<GitHubCommitSummaryDto>> =
+        Response.error(403, "rate limit".toResponseBody())
+    }
+
+    val changelogMd = """
+      # Novidades do Nick Craft
+      ## 0.01 - Correção de Bugs (13/11/2026)
+      - Textura do Player corrigida
+      - Partículas de blocos não ficam mais travadas
+      
+      ## 0.00 - Lançamento Inicial
+      - Mundo 3D procedural
+    """.trimIndent()
+
+    val mockClient = okhttp3.OkHttpClient.Builder()
+      .addInterceptor { chain ->
+        val url = chain.request().url.toString()
+        val bodyText = when {
+          url.endsWith("CHANGELOG.md") -> changelogMd
+          url.endsWith(".atom") -> "<feed xmlns=\"http://www.w3.org/2005/Atom\"></feed>"
+          else -> ""
+        }
+        val code = if (bodyText.isNotEmpty()) 200 else 404
+        okhttp3.Response.Builder()
+          .request(chain.request())
+          .protocol(okhttp3.Protocol.HTTP_1_1)
+          .code(code)
+          .message(if (code == 200) "OK" else "Not Found")
+          .body(okhttp3.ResponseBody.create(null, bodyText))
+          .build()
+      }
+      .build()
+
+    val repo = GitHubLauncherRepository(api = rateLimitedApi, okHttpClient = mockClient)
+    val result = repo.fetchVersions()
+
+    assertTrue(result.syncStatus is RepoSyncStatus.Loaded)
+    assertEquals(2, result.news.size)
+    assertEquals("0.01", result.news[0].versionTag)
+    assertTrue(result.news[0].isLatest)
+    assertEquals(2, result.news[0].highlights.size)
+    assertEquals("0.00", result.news[1].versionTag)
+    assertFalse(result.news[1].isLatest)
   }
 }

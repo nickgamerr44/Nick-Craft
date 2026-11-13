@@ -119,7 +119,7 @@ fun InventoryDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft 0.00" else "Select Block / Inventário (0.00)",
+            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft 0.01" else "Select Block / Inventário (0.01)",
             color = BedrockColors.TextWhite,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,

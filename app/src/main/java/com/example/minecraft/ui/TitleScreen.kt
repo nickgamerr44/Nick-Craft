@@ -118,7 +118,7 @@ fun TitleScreen(
               horizontalArrangement = Arrangement.Start
             ) {
               Text(
-                text = "Versão 0.00",
+                text = "Versão 1.1",
                 color = Color(0xFFFFFFFF),
                 fontSize = 14.sp,
                 modifier = Modifier
@@ -187,7 +187,7 @@ fun TitleScreen(
           )
 
           Text(
-            text = "Versão 0.00",
+            text = "Versão 1.1",
             color = Color(0xFFFFFFFF),
             fontSize = 14.sp,
             modifier = Modifier

@@ -37,13 +37,18 @@ object TextureAtlas {
   fun getUV(tileIndex: Int): FloatArray {
     val tx = tileIndex % TILES_PER_ROW
     val ty = tileIndex / TILES_PER_ROW
+    val eps = 0.0005f
 
-    val uMin = tx.toFloat() / TILES_PER_ROW.toFloat()
-    val vMin = ty.toFloat() / TILES_PER_ROW.toFloat()
-    val uMax = (tx + 1).toFloat() / TILES_PER_ROW.toFloat()
-    val vMax = (ty + 1).toFloat() / TILES_PER_ROW.toFloat()
+    val uMin = tx.toFloat() / TILES_PER_ROW.toFloat() + eps
+    val vMin = ty.toFloat() / TILES_PER_ROW.toFloat() + eps
+    val uMax = (tx + 1).toFloat() / TILES_PER_ROW.toFloat() - eps
+    val vMax = (ty + 1).toFloat() / TILES_PER_ROW.toFloat() - eps
 
     return floatArrayOf(uMin, vMin, uMax, vMax)
+  }
+
+  private fun safeRgb(r: Int, g: Int, b: Int): Int {
+    return Color.rgb(r.coerceIn(0, 255), g.coerceIn(0, 255), b.coerceIn(0, 255))
   }
 
   private fun generateAtlasBitmap(): Bitmap {
@@ -378,95 +383,97 @@ object TextureAtlas {
       val isNose = (y in 9..10 && x in 7..8)
       val isMouth = (y in 11..12 && x in 6..9)
       when {
-        isHair -> Color.rgb(65, 42, 28) // brown hair
-        isPupil -> Color.rgb(45, 60, 160) // blue/purple eye
+        isHair -> safeRgb(65, 42, 28) // brown hair
+        isPupil -> safeRgb(45, 70, 175) // blue eyes
         isEyeWhite -> Color.WHITE
-        isNose -> Color.rgb(180, 120, 95)
-        isMouth -> Color.rgb(105, 55, 35) // beard/mouth
-        else -> Color.rgb(205, 145, 115) // skin tone
+        isNose -> safeRgb(186, 128, 100)
+        isMouth -> safeRgb(146, 92, 66) // subtle classic mouth/beard
+        else -> safeRgb(208, 150, 120) // skin tone
       }
     }
 
-    // 30: Steve Torso Front (Teal/Cyan T-shirt with neck opening)
+    // 30: Steve Torso Front (Teal/Cyan T-shirt with clean neck opening, clamped RGB)
     drawTile(30) { x, y ->
-      val isNeck = (y < 4 && x in 6..9)
+      val isNeck = (y < 3 && x in 6..9) || (y == 3 && x in 7..8)
       if (isNeck) {
-        Color.rgb(205, 145, 115) // skin
+        safeRgb(208, 150, 120) // skin
       } else {
-        val n = rng.nextInt(-8, 9)
-        Color.rgb(0 + n, 145 + n, 155 + n) // cyan shirt
+        val n = rng.nextInt(-6, 7)
+        safeRgb(10 + n, 165 + n, 175 + n) // clean cyan shirt, no negative overflow
       }
     }
 
-    // 31: Steve Torso Back
+    // 31: Steve Torso Back & Shoulders (Solid Cyan T-shirt, clamped RGB)
     drawTile(31) { _, _ ->
-      val n = rng.nextInt(-8, 9)
-      Color.rgb(0 + n, 145 + n, 155 + n)
+      val n = rng.nextInt(-6, 7)
+      safeRgb(10 + n, 165 + n, 175 + n)
     }
 
-    // 32: Steve Arm (Cyan sleeve at top, skin at bottom)
+    // 32: Steve Arm (Cyan sleeve at top, skin below)
     drawTile(32) { _, y ->
       if (y < 5) {
-        Color.rgb(0, 145, 155) // sleeve
+        val n = rng.nextInt(-5, 6)
+        safeRgb(10 + n, 165 + n, 175 + n) // matching sleeve
       } else {
-        Color.rgb(205, 145, 115) // skin
+        val n = rng.nextInt(-4, 5)
+        safeRgb(208 + n, 150 + n, 120 + n) // skin
       }
     }
 
     // 33: Steve Leg (Blue jeans with dark shoes)
     drawTile(33) { _, y ->
       if (y < 12) {
-        val n = rng.nextInt(-8, 9)
-        Color.rgb(40 + n, 50 + n, 130 + n) // blue jeans
+        val n = rng.nextInt(-6, 7)
+        safeRgb(42 + n, 54 + n, 136 + n) // blue jeans
       } else {
-        Color.rgb(75, 75, 80) // shoes
+        safeRgb(72, 72, 78) // shoes
       }
     }
 
     // 34: Steve Head Top / Hair
     drawTile(34) { _, _ ->
       val n = rng.nextInt(-6, 7)
-      Color.rgb(65 + n, 42 + n, 28 + n)
+      safeRgb(65 + n, 42 + n, 28 + n)
     }
 
     // 35: Steve Head Back (Hair)
     drawTile(35) { _, y ->
       if (y < 12) {
         val n = rng.nextInt(-6, 7)
-        Color.rgb(65 + n, 42 + n, 28 + n) // brown hair
+        safeRgb(65 + n, 42 + n, 28 + n) // brown hair
       } else {
-        Color.rgb(205, 145, 115) // skin on neck
+        safeRgb(208, 150, 120) // skin on neck
       }
     }
 
-    // 36: Steve Head Side (Hair on top, ear and skin on bottom)
+    // 36: Steve Head Side (Hair on top and subtle sideburn)
     drawTile(36) { x, y ->
-      val isHair = y < 6 || (y in 6..7 && x > 7)
-      val isEar = (y == 8 && x in 7..8)
+      val isHair = y < 5 || (y in 5..6 && (x < 4 || x > 11))
+      val isEar = (y in 8..9 && x in 7..8)
       when {
         isHair -> {
           val n = rng.nextInt(-6, 7)
-          Color.rgb(65 + n, 42 + n, 28 + n)
+          safeRgb(65 + n, 42 + n, 28 + n)
         }
-        isEar -> Color.rgb(180, 120, 95)
-        else -> Color.rgb(205, 145, 115)
+        isEar -> safeRgb(186, 128, 100)
+        else -> safeRgb(208, 150, 120)
       }
     }
 
     // 37: Steve First-Person Arm (Skin at top y=0..10, Cyan sleeve at bottom y=11..15)
     drawTile(37) { _, y ->
       if (y > 10) {
-        Color.rgb(0, 145, 155) // sleeve
+        safeRgb(10, 165, 175) // matching sleeve
       } else {
         val n = rng.nextInt(-4, 5)
-        Color.rgb(205 + n, 145 + n, 115 + n) // skin
+        safeRgb(208 + n, 150 + n, 120 + n) // skin
       }
     }
 
     // 38: Steve Hand Knuckles / Palm / Top (Skin tone)
     drawTile(38) { _, _ ->
       val n = rng.nextInt(-4, 5)
-      Color.rgb(205 + n, 145 + n, 115 + n)
+      safeRgb(208 + n, 150 + n, 120 + n)
     }
 
     return bitmap

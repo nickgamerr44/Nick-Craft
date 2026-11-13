@@ -45,6 +45,7 @@ import com.example.minecraft.launcher.GameVersionEntry
 import com.example.minecraft.launcher.LauncherTab
 import com.example.minecraft.launcher.LauncherUiState
 import com.example.minecraft.launcher.RepoSyncStatus
+import com.example.minecraft.launcher.UpdateNewsEntry
 import com.example.minecraft.launcher.VersionSource
 
 @Composable
@@ -148,13 +149,13 @@ fun LauncherVersionPanel(
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    // Tab Switcher: Versões vs Commits
+    // Tab Switcher: Versões | Novidades | Commits
     Row(
       modifier = Modifier
         .fillMaxWidth()
         .background(Color(0xFF0B0C0F), RoundedCornerShape(6.dp))
         .padding(4.dp),
-      horizontalArrangement = Arrangement.spacedBy(6.dp)
+      horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
       LauncherTabButton(
         text = "Versões (${uiState.versions.size})",
@@ -163,6 +164,14 @@ fun LauncherVersionPanel(
         modifier = Modifier
           .weight(1f)
           .testTag("tab_versions")
+      )
+      LauncherTabButton(
+        text = "Novidades (${uiState.news.size})",
+        selected = uiState.activeTab == LauncherTab.NEWS,
+        onClick = { onSelectTab(LauncherTab.NEWS) },
+        modifier = Modifier
+          .weight(1f)
+          .testTag("tab_news")
       )
       LauncherTabButton(
         text = "Commits (${uiState.commits.size})",
@@ -317,6 +326,66 @@ fun LauncherVersionPanel(
         }
       }
 
+      LauncherTab.NEWS -> {
+        if (uiState.news.isEmpty()) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .clip(RoundedCornerShape(6.dp))
+              .background(Color(0xFF1B1C24))
+              .padding(16.dp)
+              .testTag("news_empty_state"),
+            contentAlignment = Alignment.Center
+          ) {
+            Column(
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+              Text(
+                text = if (uiState.syncStatus is RepoSyncStatus.Loading)
+                  "Buscando novidades no GitHub..."
+                else
+                  "Nenhuma novidade encontrada em ${LauncherUiState.REPO_OWNER}/${LauncherUiState.REPO_NAME}.",
+                color = Color(0xFFB0B4C2),
+                fontSize = 12.sp
+              )
+              if (uiState.syncStatus !is RepoSyncStatus.Loading) {
+                Box(
+                  modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF2E7D32))
+                    .clickable(onClick = onRefresh)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    text = "Sincronizar GitHub",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                  )
+                }
+              }
+            }
+          }
+        } else {
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxSize()
+              .testTag("news_list"),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            items(uiState.news, key = { it.id }) { newsItem ->
+              NewsEntryCard(
+                news = newsItem,
+                onOpenUrl = { onOpenExternalUrl(newsItem.htmlUrl) }
+              )
+            }
+          }
+        }
+      }
+
       LauncherTab.CHANGELOG -> {
         if (uiState.commits.isEmpty()) {
           Box(
@@ -365,13 +434,13 @@ private fun LauncherTabButton(
       .clip(RoundedCornerShape(4.dp))
       .background(if (selected) Color(0xFF26242E) else Color.Transparent)
       .clickable(onClick = onClick)
-      .padding(horizontal = 10.dp, vertical = 8.dp),
+      .padding(horizontal = 6.dp, vertical = 8.dp),
     contentAlignment = Alignment.Center
   ) {
     Text(
       text = text,
       color = if (selected) Color.White else Color(0xFF8C90A0),
-      fontSize = 12.sp,
+      fontSize = 11.sp,
       fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
       maxLines = 1,
       overflow = TextOverflow.Ellipsis
@@ -614,6 +683,131 @@ private fun VersionEntryCard(
         maxLines = 2,
         overflow = TextOverflow.Ellipsis
       )
+    }
+  }
+}
+
+@Composable
+private fun NewsEntryCard(
+  news: UpdateNewsEntry,
+  onOpenUrl: () -> Unit
+) {
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(RoundedCornerShape(6.dp))
+      .background(if (news.isLatest) Color(0xFF20222C) else Color(0xFF1A1B22))
+      .border(
+        width = if (news.isLatest) 1.5.dp else 1.dp,
+        color = if (news.isLatest) Color(0xFF4CAF50) else Color(0xFF2D2B38),
+        shape = RoundedCornerShape(6.dp)
+      )
+      .padding(12.dp)
+      .testTag("news_card_${news.id}")
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.weight(1f)
+      ) {
+        Box(
+          modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF3949AB))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+          Text(
+            text = news.versionTag,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
+          )
+        }
+        Text(
+          text = news.title,
+          color = Color.White,
+          fontSize = 13.sp,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis
+        )
+      }
+
+      if (news.isLatest) {
+        Box(
+          modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF1B5E20))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+          Text(
+            text = "MAIS RECENTE",
+            color = Color(0xFFC8E6C9),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    if (news.highlights.isNotEmpty()) {
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        news.highlights.forEach { bullet ->
+          Text(
+            text = "• $bullet",
+            color = Color(0xFFDCE0EE),
+            fontSize = 12.sp,
+            lineHeight = 16.sp
+          )
+        }
+      }
+    }
+
+    if (news.summary.isNotBlank()) {
+      if (news.highlights.isNotEmpty()) Spacer(modifier = Modifier.height(6.dp))
+      Text(
+        text = news.summary,
+        color = Color(0xFFB0B4C2),
+        fontSize = 11.sp,
+        lineHeight = 15.sp
+      )
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Text(
+        text = news.dateLabel,
+        color = Color(0xFF8C90A0),
+        fontSize = 10.sp
+      )
+      Box(
+        modifier = Modifier
+          .minimumInteractiveComponentSize()
+          .clip(RoundedCornerShape(4.dp))
+          .clickable(onClick = onOpenUrl)
+          .padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        Text(
+          text = "Ver no GitHub ↗",
+          color = Color(0xFF90CAF9),
+          fontSize = 11.sp,
+          fontWeight = FontWeight.SemiBold
+        )
+      }
     }
   }
 }

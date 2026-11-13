@@ -69,7 +69,7 @@ fun GameScreen(
   worldInfo: WorldInfo,
   storage: WorldStorage,
   onExitToTitle: () -> Unit,
-  versionTag: String = "0.00"
+  versionTag: String = "0.01"
 ) {
   val context = LocalContext.current
 
@@ -216,6 +216,7 @@ fun GameScreen(
     while (isActive) {
       if (!showPauseMenu && !showInventory) {
         player.update(world, moveForward, moveStrafe, jumpHeld, descendHeld)
+        world.updateParticles()
 
         if (player.isOnGround && isMoving) {
           stepSoundTimer++
@@ -284,6 +285,12 @@ fun GameScreen(
           renderer.breakProgress = 0f
           digSoundTimer = 0
         }
+      } else {
+        moveForward = 0f
+        moveStrafe = 0f
+        jumpHeld = false
+        descendHeld = false
+        player.limbSwingWeight = 0f
       }
       delay(16)
     }

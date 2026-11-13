@@ -42,6 +42,7 @@ class Player(
 
   var swingProgress: Float = 0f
   var walkBobbing: Float = 0f
+  var limbSwingWeight: Float = 0f
   var cameraMode: CameraMode = CameraMode.FIRST_PERSON
   var isThirdPerson: Boolean
     get() = (cameraMode != CameraMode.FIRST_PERSON)
@@ -112,11 +113,10 @@ class Player(
     val wishX = (forwardX * moveForward + rightX * moveStrafe) * baseSpeed
     val wishZ = (forwardZ * moveForward + rightZ * moveStrafe) * baseSpeed
 
-    val isMoving = (moveForward != 0f || moveStrafe != 0f)
-    if (isOnGround && isMoving) {
-      walkBobbing += 0.22f
-    }
+    val prevX = x
+    val prevZ = z
 
+    val isMovingInput = (moveForward != 0f || moveStrafe != 0f)
     val isUnderwater = world.getBlock(x.toInt(), eyeY.toInt(), z.toInt()) == BlockType.WATER
 
     if (isFlying) {
@@ -128,9 +128,10 @@ class Player(
         descendHeld -> -0.14f
         else -> 0f
       }
-      x += vx
+      x = (x + vx).coerceIn(0.5f, world.width - 0.5f)
       y += vy
-      z += vz
+      z = (z + vz).coerceIn(0.5f, world.length - 0.5f)
+      updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = true)
       return
     }
 
@@ -159,6 +160,29 @@ class Player(
 
     // Smooth movement with step-up & collision
     moveWithCollision(world)
+    updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = !isOnGround)
+  }
+
+  private fun updateLimbAnimation(
+    isMovingInput: Boolean,
+    prevX: Float,
+    prevZ: Float,
+    moveForward: Float,
+    airborne: Boolean
+  ) {
+    val dx = x - prevX
+    val dz = z - prevZ
+    val movedHorizontally = (dx * dx + dz * dz) > 0.00008f
+
+    if (isMovingInput && movedHorizontally && !airborne) {
+      limbSwingWeight = (limbSwingWeight + 0.28f).coerceAtMost(1.0f)
+      walkBobbing += if (moveForward < 0f) -0.22f else 0.22f
+    } else {
+      limbSwingWeight = (limbSwingWeight - 0.28f).coerceAtLeast(0.0f)
+      if (limbSwingWeight <= 0f) {
+        walkBobbing = 0f
+      }
+    }
   }
 
   private fun moveWithCollision(world: VoxelWorld) {
@@ -213,12 +237,14 @@ class Player(
       }
     }
 
-    // Bedrock floor barrier at y=1
+    // Bedrock floor barrier at y=1 & keep inside world bounds
     if (y < 1.0f) {
       y = 1.0f
       vy = 0f
       isOnGround = true
     }
+    x = x.coerceIn(0.5f, world.width - 0.5f)
+    z = z.coerceIn(0.5f, world.length - 0.5f)
 
     // Mob physical solid collision: Steve cannot be passed through by mobs
     for (mob in world.mobs) {
