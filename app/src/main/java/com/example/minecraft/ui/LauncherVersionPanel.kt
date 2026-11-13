@@ -54,6 +54,7 @@ fun LauncherVersionPanel(
   onSelectTab: (LauncherTab) -> Unit,
   onRefresh: () -> Unit,
   onDownloadVersion: (String) -> Unit,
+  onPlayVersion: (String) -> Unit,
   onDeleteVersion: (String) -> Unit,
   onDismissBanner: () -> Unit,
   onOpenExternalUrl: (String) -> Unit,
@@ -307,6 +308,7 @@ fun LauncherVersionPanel(
                 isSelected = version.id == uiState.selectedVersionId,
                 onSelect = { onSelectVersion(version.id) },
                 onDownload = { onDownloadVersion(version.id) },
+                onPlay = { onPlayVersion(version.versionTag) },
                 onDelete = { onDeleteVersion(version.id) },
                 onOpenUrl = { url -> onOpenExternalUrl(url) }
               )
@@ -383,12 +385,13 @@ private fun VersionEntryCard(
   isSelected: Boolean,
   onSelect: () -> Unit,
   onDownload: () -> Unit,
+  onPlay: () -> Unit,
   onDelete: () -> Unit,
   onOpenUrl: (String) -> Unit
 ) {
   val isReady = entry.isDownloaded
   val borderColor = when {
-    isSelected && isReady -> Color(0xFF4CAF50)
+    isReady -> Color(0xFF4CAF50)
     isSelected -> Color(0xFF8E85FF)
     else -> Color(0xFF2D2B38)
   }
@@ -397,7 +400,6 @@ private fun VersionEntryCard(
   val badgeColor = when (entry.source) {
     VersionSource.GITHUB_RELEASE -> Color(0xFF3949AB)
     VersionSource.GITHUB_VERSIONS_DIR -> Color(0xFF00838F)
-    VersionSource.GITHUB_APK -> Color(0xFF6A1B9A)
     VersionSource.GITHUB_TAG -> Color(0xFF455A64)
     VersionSource.GITHUB_BRANCH -> Color(0xFF00695C)
   }
@@ -407,7 +409,7 @@ private fun VersionEntryCard(
       .fillMaxWidth()
       .clip(RoundedCornerShape(6.dp))
       .background(bgColor)
-      .border(if (isSelected) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(6.dp))
+      .border(if (isSelected || isReady) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(6.dp))
       .clickable(onClick = onSelect)
       .padding(10.dp)
       .testTag("version_card_${entry.id}")
@@ -447,38 +449,31 @@ private fun VersionEntryCard(
         )
       }
 
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        if (isReady) {
-          Box(
-            modifier = Modifier
-              .clip(RoundedCornerShape(4.dp))
-              .background(Color(0xFF1B5E20))
-              .padding(horizontal = 6.dp, vertical = 2.dp)
-              .testTag("installed_pill_${entry.id}")
-          ) {
-            Text(
-              text = if (!entry.localSizeLabel.isNullOrBlank())
-                "Instalada (${entry.localSizeLabel})"
-              else
-                "Instalada",
-              color = Color(0xFFC8E6C9),
-              fontSize = 10.sp,
-              fontWeight = FontWeight.Bold
-            )
-          }
-        }
-
-        if (isSelected) {
-          Icon(
-            imageVector = if (isReady) Icons.Default.PlayArrow else Icons.Default.CheckCircle,
-            contentDescription = "Versão selecionada",
-            tint = if (isReady) Color(0xFF66BB6A) else Color(0xFFB39DDB),
-            modifier = Modifier.size(18.dp)
+      if (isReady) {
+        Box(
+          modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF1B5E20))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .testTag("installed_pill_${entry.id}")
+        ) {
+          Text(
+            text = if (!entry.localSizeLabel.isNullOrBlank())
+              "Instalada (${entry.localSizeLabel})"
+            else
+              "Instalada",
+            color = Color(0xFFC8E6C9),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold
           )
         }
+      } else if (isSelected) {
+        Icon(
+          imageVector = Icons.Default.CheckCircle,
+          contentDescription = "Versão selecionada",
+          tint = Color(0xFFB39DDB),
+          modifier = Modifier.size(18.dp)
+        )
       }
     }
 
@@ -507,20 +502,46 @@ private fun VersionEntryCard(
             modifier = Modifier
               .minimumInteractiveComponentSize()
               .clip(RoundedCornerShape(4.dp))
-              .background(Color(0xFF2E7D32))
+              .background(Color(0xFF26242E))
+              .border(1.dp, Color(0xFF4A4858), RoundedCornerShape(4.dp))
               .clickable(onClick = onDownload)
-              .padding(horizontal = 12.dp, vertical = 8.dp)
+              .padding(horizontal = 14.dp, vertical = 8.dp)
               .testTag("download_version_${entry.id}"),
             contentAlignment = Alignment.Center
           ) {
             Text(
               text = "Baixar",
               color = Color.White,
-              fontSize = 11.sp,
+              fontSize = 12.sp,
               fontWeight = FontWeight.Bold
             )
           }
         } else if (entry.isDownloaded) {
+          Row(
+            modifier = Modifier
+              .minimumInteractiveComponentSize()
+              .clip(RoundedCornerShape(4.dp))
+              .background(Color(0xFF2E7D32))
+              .clickable(onClick = onPlay)
+              .padding(horizontal = 14.dp, vertical = 8.dp)
+              .testTag("play_version_${entry.id}"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.PlayArrow,
+              contentDescription = "Jogar esta versão",
+              tint = Color.White,
+              modifier = Modifier.size(16.dp)
+            )
+            Text(
+              text = "Jogar",
+              color = Color.White,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold
+            )
+          }
+
           IconButton(
             onClick = onDelete,
             modifier = Modifier

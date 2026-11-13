@@ -102,7 +102,7 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun testGitHubLauncherRepositoryParsesReleasesApksAndTags() = runTest {
+  fun testGitHubLauncherRepositoryIgnoresApkFolderAndParsesReleasesVersionsAndTags() = runTest {
     val fakeApi = object : GitHubApiService {
       override suspend fun getRepository(owner: String, repo: String) = Response.success(
         GitHubRepoDto(
@@ -125,9 +125,9 @@ class ExampleUnitTest {
             htmlUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/tag/v0.01",
             assets = listOf(
               GitHubAssetDto(
-                name = "NickCraft-0.01.apk",
+                name = "NickCraft-0.01.zip",
                 size = 10_000_000L,
-                browserDownloadUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/download/v0.01/NickCraft-0.01.apk"
+                browserDownloadUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/download/v0.01/NickCraft-0.01.zip"
               )
             )
           )
@@ -142,6 +142,12 @@ class ExampleUnitTest {
       )
 
       override suspend fun getContents(owner: String, repo: String, path: String) = when (path) {
+        "" -> Response.success(
+          listOf(
+            GitHubContentDto(name = "versions", path = "versions", type = "dir"),
+            GitHubContentDto(name = "apk", path = "apk", type = "dir")
+          )
+        )
         "versions" -> Response.success(
           listOf(
             GitHubContentDto(
@@ -151,18 +157,6 @@ class ExampleUnitTest {
               type = "file",
               htmlUrl = "https://github.com/nickgamerr44/Nick-Craft/blob/main/versions/0.02.json",
               downloadUrl = "https://raw.githubusercontent.com/nickgamerr44/Nick-Craft/main/versions/0.02.json"
-            )
-          )
-        )
-        "apk" -> Response.success(
-          listOf(
-            GitHubContentDto(
-              name = "NickCraft-0.00.apk",
-              path = "apk/NickCraft-0.00.apk",
-              size = 9_800_000L,
-              type = "file",
-              htmlUrl = "https://github.com/nickgamerr44/Nick-Craft/blob/main/apk/NickCraft-0.00.apk",
-              downloadUrl = "https://raw.githubusercontent.com/nickgamerr44/Nick-Craft/main/apk/NickCraft-0.00.apk"
             )
           )
         )
@@ -189,12 +183,11 @@ class ExampleUnitTest {
     assertTrue(result.syncStatus is RepoSyncStatus.Loaded)
     assertNotNull(result.repoInfo)
     assertEquals(12, result.repoInfo?.stars)
-    // v0.01 Release + /versions/0.02.json + /apk/NickCraft-0.00.apk + 0.00 tag (v0.01 tag deduplicated)
-    assertEquals(4, result.versions.size)
+    // v0.01 Release + /versions/0.02.json + 0.00 tag (v0.01 tag deduplicated; /apk folder ignored)
+    assertEquals(3, result.versions.size)
     assertEquals(VersionSource.GITHUB_RELEASE, result.versions[0].source)
     assertEquals(VersionSource.GITHUB_VERSIONS_DIR, result.versions[1].source)
-    assertEquals(VersionSource.GITHUB_APK, result.versions[2].source)
-    assertEquals(VersionSource.GITHUB_TAG, result.versions[3].source)
+    assertEquals(VersionSource.GITHUB_TAG, result.versions[2].source)
     assertEquals(1, result.commits.size)
   }
 
@@ -276,5 +269,78 @@ class ExampleUnitTest {
     } finally {
       tempDir.deleteRecursively()
     }
+  }
+
+  @Test
+  fun testGitHubRateLimit403FallsBackToAtomFeeds() = runTest {
+    val rateLimitedApi = object : GitHubApiService {
+      override suspend fun getRepository(owner: String, repo: String): Response<GitHubRepoDto> =
+        Response.error(403, "API rate limit exceeded".toResponseBody())
+      override suspend fun getReleases(owner: String, repo: String, perPage: Int): Response<List<GitHubReleaseDto>> =
+        Response.error(403, "API rate limit exceeded".toResponseBody())
+      override suspend fun getTags(owner: String, repo: String, perPage: Int): Response<List<GitHubTagDto>> =
+        Response.error(403, "API rate limit exceeded".toResponseBody())
+      override suspend fun getContents(owner: String, repo: String, path: String): Response<List<GitHubContentDto>> =
+        Response.error(403, "API rate limit exceeded".toResponseBody())
+      override suspend fun getCommits(owner: String, repo: String, perPage: Int): Response<List<GitHubCommitSummaryDto>> =
+        Response.error(403, "API rate limit exceeded".toResponseBody())
+    }
+
+    val releasesAtom = """
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>tag:github.com,2008:Repository/1/v0.02</id>
+          <updated>2026-11-13T12:00:00Z</updated>
+          <link rel="alternate" type="text/html" href="https://github.com/nickgamerr44/Nick-Craft/releases/tag/v0.02"/>
+          <title>Nick Craft 0.02</title>
+          <content type="html">&lt;p&gt;Versao 0.02 no Atom&lt;/p&gt;</content>
+        </entry>
+      </feed>
+    """.trimIndent()
+
+    val commitsAtom = """
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <id>tag:github.com,2008:Grit::Commit/abcdef1234567890</id>
+          <updated>2026-11-13T11:00:00Z</updated>
+          <link rel="alternate" type="text/html" href="https://github.com/nickgamerr44/Nick-Craft/commit/abcdef1234567890"/>
+          <title>Add new blocks</title>
+          <author><name>nickgamerr44</name></author>
+        </entry>
+      </feed>
+    """.trimIndent()
+
+    val mockAtomClient = okhttp3.OkHttpClient.Builder()
+      .addInterceptor { chain ->
+        val url = chain.request().url.toString()
+        val bodyText = when {
+          url.endsWith("releases.atom") -> releasesAtom
+          url.endsWith("commits.atom") -> commitsAtom
+          else -> "<feed xmlns=\"http://www.w3.org/2005/Atom\"></feed>"
+        }
+        okhttp3.Response.Builder()
+          .request(chain.request())
+          .protocol(okhttp3.Protocol.HTTP_1_1)
+          .code(200)
+          .message("OK")
+          .body(okhttp3.ResponseBody.create(null, bodyText))
+          .build()
+      }
+      .build()
+
+    val repo = GitHubLauncherRepository(
+      api = rateLimitedApi,
+      okHttpClient = mockAtomClient
+    )
+    val result = repo.fetchVersions()
+
+    assertTrue(result.syncStatus is RepoSyncStatus.Loaded)
+    assertEquals(1, result.versions.size)
+    assertEquals("v0.02", result.versions[0].versionTag)
+    assertEquals(VersionSource.GITHUB_RELEASE, result.versions[0].source)
+    assertEquals("https://github.com/nickgamerr44/Nick-Craft/archive/refs/tags/v0.02.zip", result.versions[0].dataDownloadUrl)
+    assertEquals(1, result.commits.size)
+    assertEquals("abcdef1", result.commits[0].shaShort)
+    assertEquals("Add new blocks", result.commits[0].message)
   }
 }

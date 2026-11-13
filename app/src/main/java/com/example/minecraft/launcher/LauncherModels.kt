@@ -3,7 +3,6 @@ package com.example.minecraft.launcher
 enum class VersionSource(val label: String) {
   GITHUB_RELEASE("Release GitHub"),
   GITHUB_VERSIONS_DIR("Pasta /versions"),
-  GITHUB_APK("Build /apk"),
   GITHUB_TAG("Tag Git"),
   GITHUB_BRANCH("Branch GitHub")
 }

@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
     setContent {
       MyApplicationTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
-          MinecraftApp()
+          NickCraftLauncherApp()
         }
       }
     }
@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MinecraftApp() {
+fun NickCraftLauncherApp() {
   val context = androidx.compose.ui.platform.LocalContext.current
   val storage = remember { WorldStorage(context) }
 
