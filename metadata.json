@@ -1,0 +1,6 @@
+{
+  "name": "Nick Craft",
+  "description": "Nick Craft Open Source Launcher & 3D Voxel Game (v0.00) loading releases, APKs, tags, and commits directly from github.com/nickgamerr44/Nick-Craft.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
