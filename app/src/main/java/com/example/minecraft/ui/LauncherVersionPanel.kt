@@ -548,101 +548,121 @@ private fun VersionEntryCard(
 
     Spacer(modifier = Modifier.height(6.dp))
 
+    Text(
+      text = "${entry.source.label} • ${entry.dateLabel}",
+      color = Color(0xFFB0B4C2),
+      fontSize = 11.sp,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis
+    )
+
+    Spacer(modifier = Modifier.height(6.dp))
+
     Row(
       modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-      Text(
-        text = "${entry.source.label} • ${entry.dateLabel}",
-        color = Color(0xFFB0B4C2),
-        fontSize = 11.sp,
-        modifier = Modifier.weight(1f),
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-      )
-
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-      ) {
-        if (entry.downloadProgress == null && !entry.isDownloaded) {
-          Box(
-            modifier = Modifier
-              .minimumInteractiveComponentSize()
-              .clip(RoundedCornerShape(4.dp))
-              .background(Color(0xFF26242E))
-              .border(1.dp, Color(0xFF4A4858), RoundedCornerShape(4.dp))
-              .clickable(onClick = onDownload)
-              .padding(horizontal = 14.dp, vertical = 8.dp)
-              .testTag("download_version_${entry.id}"),
-            contentAlignment = Alignment.Center
-          ) {
-            Text(
-              text = "Baixar",
-              color = Color.White,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Bold
-            )
-          }
-        } else if (entry.isDownloaded) {
-          Row(
-            modifier = Modifier
-              .minimumInteractiveComponentSize()
-              .clip(RoundedCornerShape(4.dp))
-              .background(Color(0xFF2E7D32))
-              .clickable(onClick = onPlay)
-              .padding(horizontal = 14.dp, vertical = 8.dp)
-              .testTag("play_version_${entry.id}"),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-          ) {
-            Icon(
-              imageVector = Icons.Default.PlayArrow,
-              contentDescription = "Jogar esta versão",
-              tint = Color.White,
-              modifier = Modifier.size(16.dp)
-            )
-            Text(
-              text = "Jogar",
-              color = Color.White,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.Bold
-            )
-          }
-
-          IconButton(
-            onClick = onDelete,
-            modifier = Modifier
-              .size(48.dp)
-              .testTag("delete_version_${entry.id}")
-          ) {
-            Icon(
-              imageVector = Icons.Default.Delete,
-              contentDescription = "Excluir versão baixada",
-              tint = Color(0xFFEF9A9A),
-              modifier = Modifier.size(18.dp)
-            )
-          }
+      if (entry.downloadProgress == null && !entry.isDownloaded) {
+        Box(
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF26242E))
+            .border(1.dp, Color(0xFF4A4858), RoundedCornerShape(4.dp))
+            .clickable(onClick = onDownload)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .testTag("download_version_${entry.id}"),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = "Baixar",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      } else if (entry.isDownloaded) {
+        Row(
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF2E7D32))
+            .clickable(onClick = onPlay)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .testTag("play_version_${entry.id}"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "Jogar esta versão",
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+          )
+          Text(
+            text = "Jogar",
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+          )
         }
 
-        val externalUrl = entry.htmlUrl
-        if (!externalUrl.isNullOrBlank()) {
-          Box(
-            modifier = Modifier
-              .minimumInteractiveComponentSize()
-              .clip(RoundedCornerShape(4.dp))
-              .clickable { onOpenUrl(externalUrl) }
-              .padding(horizontal = 8.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
-          ) {
-            Text(
-              text = "GitHub ↗",
-              color = Color(0xFF90CAF9),
-              fontSize = 11.sp,
-              fontWeight = FontWeight.SemiBold
-            )
-          }
+        IconButton(
+          onClick = onDelete,
+          modifier = Modifier
+            .size(48.dp)
+            .testTag("delete_version_${entry.id}")
+        ) {
+          Icon(
+            imageVector = Icons.Default.Delete,
+            contentDescription = "Excluir versão baixada",
+            tint = Color(0xFFEF9A9A),
+            modifier = Modifier.size(18.dp)
+          )
+        }
+      }
+
+      Spacer(modifier = Modifier.weight(1f))
+
+      val apkUrl = entry.releaseApkUrl
+      if (!apkUrl.isNullOrBlank()) {
+        Box(
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF1F3528))
+            .border(1.dp, Color(0xFF3E6E52), RoundedCornerShape(4.dp))
+            .clickable { onOpenUrl(apkUrl) }
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag("download_apk_${entry.id}"),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = "APK ↗",
+            color = Color(0xFFA5D6A7),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      }
+
+      val externalUrl = entry.htmlUrl
+      if (!externalUrl.isNullOrBlank()) {
+        Box(
+          modifier = Modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(4.dp))
+            .clickable { onOpenUrl(externalUrl) }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = "GitHub ↗",
+            color = Color(0xFF90CAF9),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+          )
         }
       }
     }

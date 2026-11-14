@@ -91,7 +91,15 @@ class Player(
     return false
   }
 
-  fun update(world: VoxelWorld, moveForward: Float, moveStrafe: Float, jumpHeld: Boolean, descendHeld: Boolean) {
+  fun update(
+    world: VoxelWorld,
+    moveForward: Float,
+    moveStrafe: Float,
+    jumpHeld: Boolean,
+    descendHeld: Boolean,
+    fixLimbStopAnimation: Boolean = true,
+    fixStrafeDirection: Boolean = true
+  ) {
     if (hurtTime > 0) hurtTime--
     if (swingProgress > 0f) {
       swingProgress = (swingProgress - 0.12f).coerceAtLeast(0f)
@@ -101,8 +109,8 @@ class Player(
     val radYaw = Math.toRadians(yaw.toDouble())
     val forwardX = -sin(radYaw).toFloat()
     val forwardZ = cos(radYaw).toFloat()
-    val rightX = -cos(radYaw).toFloat()
-    val rightZ = -sin(radYaw).toFloat()
+    val rightX = if (fixStrafeDirection) -cos(radYaw).toFloat() else cos(radYaw).toFloat()
+    val rightZ = if (fixStrafeDirection) -sin(radYaw).toFloat() else sin(radYaw).toFloat()
 
     val baseSpeed = when {
       isFlying -> 0.18f
@@ -131,7 +139,7 @@ class Player(
       x = (x + vx).coerceIn(0.5f, world.width - 0.5f)
       y += vy
       z = (z + vz).coerceIn(0.5f, world.length - 0.5f)
-      updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = true)
+      updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = true, fixLimbStopAnimation = fixLimbStopAnimation)
       return
     }
 
@@ -160,7 +168,7 @@ class Player(
 
     // Smooth movement with step-up & collision
     moveWithCollision(world)
-    updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = !isOnGround)
+    updateLimbAnimation(isMovingInput, prevX, prevZ, moveForward, airborne = !isOnGround, fixLimbStopAnimation = fixLimbStopAnimation)
   }
 
   private fun updateLimbAnimation(
@@ -168,8 +176,19 @@ class Player(
     prevX: Float,
     prevZ: Float,
     moveForward: Float,
-    airborne: Boolean
+    airborne: Boolean,
+    fixLimbStopAnimation: Boolean
   ) {
+    if (!fixLimbStopAnimation) {
+      if (isMovingInput) {
+        limbSwingWeight = (limbSwingWeight + 0.22f).coerceAtMost(1.0f)
+        walkBobbing += 0.22f
+      } else {
+        limbSwingWeight = (limbSwingWeight - 0.08f).coerceAtLeast(0.0f)
+      }
+      return
+    }
+
     val dx = x - prevX
     val dz = z - prevZ
     val movedHorizontally = (dx * dx + dz * dz) > 0.00008f

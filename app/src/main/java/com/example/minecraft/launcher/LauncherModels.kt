@@ -27,7 +27,9 @@ data class GameVersionEntry(
   val dataDownloadUrl: String? = null,
   val assetName: String? = null,
   val assetSizeBytes: Long? = null,
-  val localSizeLabel: String? = null
+  val localSizeLabel: String? = null,
+  val releaseApkUrl: String? = null,
+  val releaseApkName: String? = null
 )
 
 data class DownloadedVersionManifest(

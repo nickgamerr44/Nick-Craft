@@ -190,6 +190,11 @@ class GitHubLauncherRepository(
               it.name.endsWith(".zip", ignoreCase = true) ||
               it.name.endsWith(".mcpack", ignoreCase = true)
           }
+          val apkAsset = rel.assets.firstOrNull {
+            it.name.endsWith(".apk", ignoreCase = true) && !it.name.contains("launcher", ignoreCase = true)
+          } ?: rel.assets.firstOrNull {
+            it.name.endsWith(".apk", ignoreCase = true)
+          }
           val localInfo = downloadedMap[id]
           val cleanNotes = rel.body?.trim()?.take(220).orEmpty()
           val fallbackArchiveUrl = "https://github.com/$owner/$repo/archive/refs/tags/${rel.tagName}.zip"
@@ -207,7 +212,9 @@ class GitHubLauncherRepository(
               dataDownloadUrl = dataAsset?.browserDownloadUrl ?: fallbackArchiveUrl,
               assetName = dataAsset?.name ?: "NickCraft-${rel.tagName}.zip",
               assetSizeBytes = dataAsset?.size,
-              localSizeLabel = localInfo?.let { formatByteSize(it.sizeBytes) }
+              localSizeLabel = localInfo?.let { formatByteSize(it.sizeBytes) },
+              releaseApkUrl = apkAsset?.browserDownloadUrl?.takeIf { it.isNotBlank() },
+              releaseApkName = apkAsset?.name?.takeIf { it.isNotBlank() }
             )
           )
         }

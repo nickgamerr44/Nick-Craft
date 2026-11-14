@@ -156,8 +156,10 @@ class VoxelWorld(
     }
   }
 
-  fun spawnBreakParticles(bx: Int, by: Int, bz: Int, block: BlockType) {
-    val count = 6
+  fun spawnBreakParticles(bx: Int, by: Int, bz: Int, block: BlockType, fastDecay: Boolean = true) {
+    val count = if (fastDecay) 6 else 16
+    val lifetime = if (fastDecay) 14 else 38
+    val maxQueue = if (fastDecay) 30 else 80
     val (r, g, b) = when (block) {
       BlockType.GRASS -> Triple(0.2f, 0.7f, 0.2f)
       BlockType.DIRT -> Triple(0.5f, 0.35f, 0.2f)
@@ -173,7 +175,7 @@ class VoxelWorld(
 
     val tile = block.sideTextureIndex
     synchronized(particles) {
-      while (particles.size > 30) {
+      while (particles.size > maxQueue) {
         particles.removeAt(0)
       }
       for (i in 0 until count) {
@@ -185,7 +187,7 @@ class VoxelWorld(
             (Math.random().toFloat() - 0.5f) * 0.11f,
             Math.random().toFloat() * 0.10f + 0.04f,
             (Math.random().toFloat() - 0.5f) * 0.11f,
-            r, g, b, 0.06f, 14, tile
+            r, g, b, 0.06f, lifetime, tile
           )
         )
       }

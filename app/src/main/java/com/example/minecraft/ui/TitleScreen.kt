@@ -103,7 +103,7 @@ fun TitleScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-              text = "Baixe e inicie qualquer versão diretamente pela lista ao lado.",
+              text = "Baixe qualquer versão para jogar o perfil dela no Launcher, ou toque em APK ↗ para baixar o APK da Release.",
               color = Color(0xFF7D8292),
               fontSize = 12.sp,
               modifier = Modifier.padding(horizontal = 8.dp)

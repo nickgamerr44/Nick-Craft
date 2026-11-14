@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.engine.AudioEngine
 import com.example.minecraft.model.GameMode
+import com.example.minecraft.model.GameVersionProfile
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.VoxelWorld
 import com.example.minecraft.multiplayer.MultiplayerGateway
@@ -66,6 +67,7 @@ fun GameMainMenuScreen(
 
   val scope = rememberCoroutineScope()
   val worlds = remember { storage.listWorlds() }
+  val versionProfile = remember(versionTag) { GameVersionProfile.fromVersionTag(versionTag) }
 
   if (onExitToLauncher != null) {
     BackHandler(
@@ -126,7 +128,7 @@ fun GameMainMenuScreen(
         )
       }
 
-      if (multiplayerGateway != null) {
+      if (multiplayerGateway != null && versionProfile.enableMultiplayer) {
         Spacer(modifier = Modifier.height(8.dp))
         Box(
           modifier = Modifier
@@ -274,7 +276,7 @@ fun GameMainMenuScreen(
       )
     }
 
-    if (showMultiplayerDialog && multiplayerGateway != null) {
+    if (showMultiplayerDialog && multiplayerGateway != null && versionProfile.enableMultiplayer) {
       MultiplayerDialog(
         gateway = multiplayerGateway,
         storage = storage,

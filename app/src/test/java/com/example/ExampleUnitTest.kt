@@ -523,4 +523,99 @@ class ExampleUnitTest {
     assertEquals(31, allItems.size)
     assertEquals(allItems.size, allItems.map { it.id }.toSet().size)
   }
+
+  @Test
+  fun testGameVersionProfilesReproduceHistoricalReleases() {
+    val v00 = com.example.minecraft.model.GameVersionProfile.fromVersionTag("0.00")
+    assertFalse(v00.useCustomPixelIcons)
+    assertFalse(v00.enableMultiplayer)
+    assertFalse(v00.fastBreakParticles)
+    assertFalse(v00.fixLimbStopAnimation)
+    assertFalse(v00.fixStrafeDirection)
+
+    val v01 = com.example.minecraft.model.GameVersionProfile.fromVersionTag("v0.01")
+    assertFalse(v01.useCustomPixelIcons)
+    assertFalse(v01.enableMultiplayer)
+    assertTrue(v01.fastBreakParticles)
+    assertTrue(v01.fixLimbStopAnimation)
+    assertFalse(v01.fixStrafeDirection)
+
+    val v02 = com.example.minecraft.model.GameVersionProfile.fromVersionTag("0.02")
+    assertFalse(v02.useCustomPixelIcons)
+    assertFalse(v02.enableMultiplayer)
+    assertTrue(v02.fastBreakParticles)
+    assertTrue(v02.fixLimbStopAnimation)
+    assertTrue(v02.fixStrafeDirection)
+
+    val v03 = com.example.minecraft.model.GameVersionProfile.fromVersionTag("0.03")
+    assertTrue(v03.useCustomPixelIcons)
+    assertTrue(v03.enableMultiplayer)
+    assertTrue(v03.fastBreakParticles)
+    assertTrue(v03.fixLimbStopAnimation)
+    assertTrue(v03.fixStrafeDirection)
+
+    // Verify 0.00 break particles behave historically (more particles, slower decay)
+    val world = VoxelWorld(16, 16, 16)
+    world.spawnBreakParticles(8, 5, 8, BlockType.STONE, fastDecay = v00.fastBreakParticles)
+    assertEquals(16, world.particles.size)
+    repeat(20) { world.updateParticles() }
+    assertTrue("0.00 particles should still be alive after 20 ticks", world.particles.isNotEmpty())
+  }
+
+  @Test
+  fun testGitHubReleaseExtractsApkUrlAlongsideDataZip() = runTest {
+    val fakeApi = object : GitHubApiService {
+      override suspend fun getRepository(owner: String, repo: String) = Response.success(
+        GitHubRepoDto(
+          fullName = "nickgamerr44/Nick-Craft",
+          htmlUrl = "https://github.com/nickgamerr44/Nick-Craft"
+        )
+      )
+
+      override suspend fun getReleases(owner: String, repo: String, perPage: Int) = Response.success(
+        listOf(
+          GitHubReleaseDto(
+            id = 200L,
+            tagName = "0.02",
+            name = "Nick Craft 0.02",
+            body = "Correção de direção",
+            publishedAt = "2026-11-13T12:00:00Z",
+            htmlUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/tag/0.02",
+            assets = listOf(
+              GitHubAssetDto(
+                name = "NickCraft-Launcher.apk",
+                size = 5_000_000L,
+                browserDownloadUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/download/0.02/NickCraft-Launcher.apk"
+              ),
+              GitHubAssetDto(
+                name = "NickCraft-0.02.apk",
+                size = 4_500_000L,
+                browserDownloadUrl = "https://github.com/nickgamerr44/Nick-Craft/releases/download/0.02/NickCraft-0.02.apk"
+              )
+            )
+          )
+        )
+      )
+
+      override suspend fun getTags(owner: String, repo: String, perPage: Int) = Response.success(emptyList<GitHubTagDto>())
+      override suspend fun getContents(owner: String, repo: String, path: String) = Response.success(emptyList<GitHubContentDto>())
+      override suspend fun getCommits(owner: String, repo: String, perPage: Int) = Response.success(emptyList<GitHubCommitSummaryDto>())
+    }
+
+    val repo = GitHubLauncherRepository(fakeApi)
+    val result = repo.fetchVersions()
+
+    assertEquals(1, result.versions.size)
+    val entry = result.versions[0]
+    assertEquals("0.02", entry.versionTag)
+    assertEquals(
+      "https://github.com/nickgamerr44/Nick-Craft/releases/download/0.02/NickCraft-0.02.apk",
+      entry.releaseApkUrl
+    )
+    assertEquals("NickCraft-0.02.apk", entry.releaseApkName)
+    assertEquals(
+      "https://github.com/nickgamerr44/Nick-Craft/archive/refs/tags/0.02.zip",
+      entry.dataDownloadUrl
+    )
+  }
 }

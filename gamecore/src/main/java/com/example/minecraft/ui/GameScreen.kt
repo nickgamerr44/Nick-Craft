@@ -50,6 +50,7 @@ import com.example.minecraft.engine.AudioEngine
 import com.example.minecraft.engine.VoxelRenderer
 import com.example.minecraft.model.BlockType
 import com.example.minecraft.model.GameMode
+import com.example.minecraft.model.GameVersionProfile
 import com.example.minecraft.model.ItemType
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.VoxelWorld
@@ -75,7 +76,8 @@ fun GameScreen(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
 
-  // 1. World and Player instances
+  // 1. World, Version Profile and Player instances
+  val versionProfile = remember(versionTag) { GameVersionProfile.fromVersionTag(versionTag) }
   val world = remember(worldInfo.id) { preloadedWorld ?: VoxelWorld() }
   val player = remember(worldInfo.id) { Player() }
 
@@ -119,12 +121,13 @@ fun GameScreen(
   val renderer = remember(world, player) { VoxelRenderer(context, world, player) }
 
   // Sync remote players list into OpenGL renderer
-  LaunchedEffect(mpState.remotePlayers) {
-    renderer.remotePlayers = mpState.remotePlayers
+  LaunchedEffect(mpState.remotePlayers, versionProfile.enableMultiplayer) {
+    renderer.remotePlayers = if (versionProfile.enableMultiplayer) mpState.remotePlayers else emptyList()
   }
 
   // Receive live block edits from remote players
-  LaunchedEffect(multiplayerGateway) {
+  LaunchedEffect(multiplayerGateway, versionProfile.enableMultiplayer) {
+    if (!versionProfile.enableMultiplayer) return@LaunchedEffect
     multiplayerGateway?.remoteBlockEdits?.collect { ev ->
       val blockType = BlockType.fromId(ev.blockId)
       world.setBlock(ev.x, ev.y, ev.z, blockType)
@@ -176,7 +179,9 @@ fun GameScreen(
         showInventory = true
       } else if (hit.block == BlockType.TNT) {
         world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
-        multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+        if (versionProfile.enableMultiplayer) {
+          multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+        }
         AudioEngine.playExplosion()
       } else {
         val selected = player.inventory.selectedItem
@@ -199,7 +204,9 @@ fun GameScreen(
 
           if (!collides) {
             if (world.setBlock(px, py, pz, blockToPlace)) {
-              multiplayerGateway?.publishBlockEdit(px, py, pz, blockToPlace)
+              if (versionProfile.enableMultiplayer) {
+                multiplayerGateway?.publishBlockEdit(px, py, pz, blockToPlace)
+              }
             }
             AudioEngine.playPlace()
             if (player.gameMode == GameMode.SURVIVAL) {
@@ -219,9 +226,19 @@ fun GameScreen(
 
     while (isActive) {
       if (!showPauseMenu && !showInventory) {
-        player.update(world, moveForward, moveStrafe, jumpHeld, descendHeld)
+        player.update(
+          world = world,
+          moveForward = moveForward,
+          moveStrafe = moveStrafe,
+          jumpHeld = jumpHeld,
+          descendHeld = descendHeld,
+          fixLimbStopAnimation = versionProfile.fixLimbStopAnimation,
+          fixStrafeDirection = versionProfile.fixStrafeDirection
+        )
         world.updateParticles()
-        multiplayerGateway?.publishLocalPlayerState(player)
+        if (versionProfile.enableMultiplayer) {
+          multiplayerGateway?.publishLocalPlayerState(player)
+        }
 
         if (player.isOnGround && isMoving) {
           stepSoundTimer++
@@ -258,9 +275,14 @@ fun GameScreen(
 
           if (breakProgressState >= 1.0f) {
             if (world.setBlock(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)) {
-              multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+              if (versionProfile.enableMultiplayer) {
+                multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+              }
             }
-            world.spawnBreakParticles(hit.blockX, hit.blockY, hit.blockZ, hit.block)
+            world.spawnBreakParticles(
+              hit.blockX, hit.blockY, hit.blockZ, hit.block,
+              fastDecay = versionProfile.fastBreakParticles
+            )
             AudioEngine.playBreak(hit.block)
 
             if (player.gameMode == GameMode.SURVIVAL) {
@@ -647,7 +669,11 @@ fun GameScreen(
             contentAlignment = Alignment.Center
           ) {
             if (stack != null) {
-              ItemIcon(item = stack.item, size = 24.dp)
+              if (versionProfile.useCustomPixelIcons) {
+                ItemIcon(item = stack.item, size = 24.dp)
+              } else {
+                Text(text = stack.item.iconEmoji, fontSize = 18.sp)
+              }
               if (stack.count > 1) {
                 ClassicShadowText(
                   text = "${stack.count}",
@@ -691,6 +717,8 @@ fun GameScreen(
       InventoryDialog(
         player = player,
         hasCraftingTable = hasCraftingTableOpen,
+        versionTag = versionTag,
+        useCustomPixelIcons = versionProfile.useCustomPixelIcons,
         onDismiss = {
           inventoryVersion++
           showInventory = false
@@ -700,13 +728,14 @@ fun GameScreen(
 
     if (showPauseMenu) {
       val needsGoogleSignIn = multiplayerGateway != null &&
+          versionProfile.enableMultiplayer &&
           multiplayerGateway.requiresSignIn &&
           mpUserUid == null
 
       PauseMenuDialog(
         versionTag = versionTag,
         sessionState = mpState,
-        canHostOnline = multiplayerGateway != null,
+        canHostOnline = multiplayerGateway != null && versionProfile.enableMultiplayer,
         needsGoogleSignInForServer = needsGoogleSignIn,
         onGoogleSignInClick = if (multiplayerGateway != null) {
           {

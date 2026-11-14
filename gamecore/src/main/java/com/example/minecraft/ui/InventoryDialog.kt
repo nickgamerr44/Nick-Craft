@@ -46,6 +46,8 @@ import com.example.minecraft.model.RecipeBook
 fun InventoryDialog(
   player: Player,
   hasCraftingTable: Boolean,
+  versionTag: String = "0.03",
+  useCustomPixelIcons: Boolean = true,
   onDismiss: () -> Unit
 ) {
   var selectedCategory by remember { mutableStateOf<ItemCategory?>(null) }
@@ -119,7 +121,7 @@ fun InventoryDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft 0.03" else "Inventário • Nick Craft 0.03",
+            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft $versionTag" else "Inventário • Nick Craft $versionTag",
             color = BedrockColors.TextWhite,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
@@ -162,24 +164,28 @@ fun InventoryDialog(
             ) {
               CategoryTab(
                 category = ItemCategory.BLOCK,
+                useCustomPixelIcons = useCustomPixelIcons,
                 isSelected = selectedCategory == ItemCategory.BLOCK,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.BLOCK) null else ItemCategory.BLOCK },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
                 category = ItemCategory.TOOL,
+                useCustomPixelIcons = useCustomPixelIcons,
                 isSelected = selectedCategory == ItemCategory.TOOL,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.TOOL) null else ItemCategory.TOOL },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
                 category = ItemCategory.WEAPON,
+                useCustomPixelIcons = useCustomPixelIcons,
                 isSelected = selectedCategory == ItemCategory.WEAPON,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.WEAPON) null else ItemCategory.WEAPON },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
                 category = ItemCategory.FOOD,
+                useCustomPixelIcons = useCustomPixelIcons,
                 isSelected = selectedCategory == ItemCategory.FOOD,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.FOOD) null else ItemCategory.FOOD },
                 modifier = Modifier.weight(1f)
@@ -215,7 +221,11 @@ fun InventoryDialog(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    ItemIcon(item = recipe.result.item, size = 22.dp)
+                    if (useCustomPixelIcons) {
+                      ItemIcon(item = recipe.result.item, size = 22.dp)
+                    } else {
+                      Text(text = recipe.result.item.iconEmoji, fontSize = 18.sp)
+                    }
                     Spacer(modifier = Modifier.width(6.dp))
                     Column {
                       Text(
@@ -298,7 +308,11 @@ fun InventoryDialog(
                   contentAlignment = Alignment.Center
                 ) {
                   if (stack != null) {
-                    ItemIcon(item = stack.item, size = 22.dp)
+                    if (useCustomPixelIcons) {
+                      ItemIcon(item = stack.item, size = 22.dp)
+                    } else {
+                      Text(text = stack.item.iconEmoji, fontSize = 16.sp)
+                    }
                     if (stack.count > 1) {
                       Text(
                         text = "${stack.count}",
@@ -351,7 +365,11 @@ fun InventoryDialog(
                     contentAlignment = Alignment.Center
                   ) {
                     if (stack != null) {
-                      ItemIcon(item = stack.item, size = 22.dp)
+                      if (useCustomPixelIcons) {
+                        ItemIcon(item = stack.item, size = 22.dp)
+                      } else {
+                        Text(text = stack.item.iconEmoji, fontSize = 16.sp)
+                      }
                       if (stack.count > 1) {
                         Text(
                           text = "${stack.count}",
@@ -384,7 +402,11 @@ fun InventoryDialog(
             ) {
               if (active != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  ItemIcon(item = active.item, size = 24.dp)
+                  if (useCustomPixelIcons) {
+                    ItemIcon(item = active.item, size = 24.dp)
+                  } else {
+                    Text(text = active.item.iconEmoji, fontSize = 20.sp)
+                  }
                   Spacer(modifier = Modifier.width(6.dp))
                   Column {
                     Text(
@@ -456,6 +478,7 @@ fun InventoryDialog(
 @Composable
 private fun CategoryTab(
   category: ItemCategory,
+  useCustomPixelIcons: Boolean,
   isSelected: Boolean,
   onClick: () -> Unit,
   modifier: Modifier = Modifier
@@ -475,6 +498,17 @@ private fun CategoryTab(
       .clickable(onClick = onClick),
     contentAlignment = Alignment.Center
   ) {
-    CategoryTabIcon(category = category, size = 18.dp)
+    if (useCustomPixelIcons) {
+      CategoryTabIcon(category = category, size = 18.dp)
+    } else {
+      val label = when (category) {
+        ItemCategory.BLOCK -> "🧱"
+        ItemCategory.TOOL -> "⛏️"
+        ItemCategory.WEAPON -> "⚔️"
+        ItemCategory.FOOD -> "🍎"
+        ItemCategory.MATERIAL -> "💎"
+      }
+      Text(text = label, fontSize = 14.sp)
+    }
   }
 }
