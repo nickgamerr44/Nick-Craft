@@ -3,11 +3,6 @@ package com.example.minecraft.ui
 import android.annotation.SuppressLint
 import android.opengl.GLSurfaceView
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,7 +12,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
@@ -35,10 +29,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -49,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.minecraft.data.WorldInfo
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.engine.AudioEngine
@@ -59,8 +54,11 @@ import com.example.minecraft.model.ItemType
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.VoxelWorld
 import com.example.minecraft.model.WorldGenerator
+import com.example.minecraft.multiplayer.MultiplayerGateway
+import com.example.minecraft.multiplayer.MultiplayerSessionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @SuppressLint("ClickableViewAccessibility")
 @Composable
@@ -68,20 +66,45 @@ fun GameScreen(
   worldInfo: WorldInfo,
   storage: WorldStorage,
   onExitToTitle: () -> Unit,
-  versionTag: String = "0.02"
+  versionTag: String = "0.03",
+  multiplayerGateway: MultiplayerGateway? = null,
+  initialStartAsServer: Boolean = false,
+  preloadedWorld: VoxelWorld? = null,
+  isRemoteClient: Boolean = false
 ) {
   val context = LocalContext.current
+  val scope = rememberCoroutineScope()
 
   // 1. World and Player instances
-  val world = remember { VoxelWorld() }
-  val player = remember { Player() }
+  val world = remember(worldInfo.id) { preloadedWorld ?: VoxelWorld() }
+  val player = remember(worldInfo.id) { Player() }
+
+  val mpState by (multiplayerGateway?.sessionState?.collectAsStateWithLifecycle()
+    ?: remember { mutableStateOf(MultiplayerSessionState()) })
+  val mpUserUid by (multiplayerGateway?.currentUserUid?.collectAsStateWithLifecycle()
+    ?: remember { mutableStateOf<String?>(null) })
 
   // Initialize or load world
   LaunchedEffect(worldInfo.id) {
     player.gameMode = worldInfo.gameMode
-    val loaded = storage.loadWorld(worldInfo.id, world, player)
-    if (!loaded) {
-      WorldGenerator.generate(world, worldInfo.seed)
+    if (!isRemoteClient) {
+      val loaded = storage.loadWorld(worldInfo.id, world, player)
+      if (!loaded) {
+        WorldGenerator.generate(world, worldInfo.seed)
+        player.inventory.setupStartingKit(worldInfo.gameMode == GameMode.CREATIVE)
+        for (y in 28 downTo 5) {
+          if (world.getBlock(24, y, 24).isSolid) {
+            player.y = (y + 1).toFloat()
+            break
+          }
+        }
+      }
+      if (initialStartAsServer && multiplayerGateway != null) {
+        if (!multiplayerGateway.requiresSignIn || multiplayerGateway.currentUserUid.value != null) {
+          multiplayerGateway.hostWorldAsServer(worldInfo, world, player)
+        }
+      }
+    } else {
       player.inventory.setupStartingKit(worldInfo.gameMode == GameMode.CREATIVE)
       for (y in 28 downTo 5) {
         if (world.getBlock(24, y, 24).isSolid) {
@@ -93,7 +116,20 @@ fun GameScreen(
   }
 
   // 2. Renderer instance
-  val renderer = remember { VoxelRenderer(context, world, player) }
+  val renderer = remember(world, player) { VoxelRenderer(context, world, player) }
+
+  // Sync remote players list into OpenGL renderer
+  LaunchedEffect(mpState.remotePlayers) {
+    renderer.remotePlayers = mpState.remotePlayers
+  }
+
+  // Receive live block edits from remote players
+  LaunchedEffect(multiplayerGateway) {
+    multiplayerGateway?.remoteBlockEdits?.collect { ev ->
+      val blockType = BlockType.fromId(ev.blockId)
+      world.setBlock(ev.x, ev.y, ev.z, blockType)
+    }
+  }
 
   // 3. UI States
   var showPauseMenu by remember { mutableStateOf(false) }
@@ -119,18 +155,7 @@ fun GameScreen(
   var breakProgressState by remember { mutableFloatStateOf(0f) }
   var inventoryVersion by remember { mutableIntStateOf(0) }
 
-  // Paper doll walking bobbing
   val isMoving = (moveForward != 0f || moveStrafe != 0f)
-  val infiniteTransition = rememberInfiniteTransition(label = "paperdoll")
-  val paperDollTilt by infiniteTransition.animateFloat(
-    initialValue = -8f,
-    targetValue = 8f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(280),
-      repeatMode = RepeatMode.Reverse
-    ),
-    label = "tilt"
-  )
 
   BackHandler {
     when {
@@ -151,9 +176,9 @@ fun GameScreen(
         showInventory = true
       } else if (hit.block == BlockType.TNT) {
         world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
+        multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
         AudioEngine.playExplosion()
       } else {
-        // Place held block on tapped ground / block face
         val selected = player.inventory.selectedItem
         val blockToPlace = selected?.item?.blockType
         if (blockToPlace != null && blockToPlace != BlockType.AIR) {
@@ -173,7 +198,9 @@ fun GameScreen(
               (pz + 1 > playerMinZ && pz < playerMaxZ)
 
           if (!collides) {
-            world.setBlock(px, py, pz, blockToPlace)
+            if (world.setBlock(px, py, pz, blockToPlace)) {
+              multiplayerGateway?.publishBlockEdit(px, py, pz, blockToPlace)
+            }
             AudioEngine.playPlace()
             if (player.gameMode == GameMode.SURVIVAL) {
               player.inventory.consumeSelectedItem()
@@ -186,7 +213,7 @@ fun GameScreen(
   }
 
   // 60 FPS Game Tick Loop
-  LaunchedEffect(Unit) {
+  LaunchedEffect(worldInfo.id) {
     var digSoundTimer = 0
     var stepSoundTimer = 0
 
@@ -194,6 +221,7 @@ fun GameScreen(
       if (!showPauseMenu && !showInventory) {
         player.update(world, moveForward, moveStrafe, jumpHeld, descendHeld)
         world.updateParticles()
+        multiplayerGateway?.publishLocalPlayerState(player)
 
         if (player.isOnGround && isMoving) {
           stepSoundTimer++
@@ -229,7 +257,9 @@ fun GameScreen(
           renderer.breakProgress = breakProgressState
 
           if (breakProgressState >= 1.0f) {
-            world.setBlock(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+            if (world.setBlock(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)) {
+              multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+            }
             world.spawnBreakParticles(hit.blockX, hit.blockY, hit.blockZ, hit.block)
             AudioEngine.playBreak(hit.block)
 
@@ -292,10 +322,8 @@ fun GameScreen(
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.id == pointerId } ?: break
                 if (!change.pressed) {
-                  // Finger lifted!
                   val duration = System.currentTimeMillis() - touchDownTime
                   val distSq = touchDragAccumX * touchDragAccumX + touchDragAccumY * touchDragAccumY
-                  // If it was a quick tap (< 280ms and small movement) -> Place block or interact!
                   if (duration < 280L && distSq < 1000f) {
                     handleTapInteraction()
                   }
@@ -305,12 +333,10 @@ fun GameScreen(
                   break
                 }
 
-                // Drag movement
                 val drag = change.positionChange()
                 touchDragAccumX += drag.x
                 touchDragAccumY += drag.y
 
-                // Smooth look rotation
                 val sens = 0.20f
                 player.yaw = (player.yaw + drag.x * sens) % 360f
                 player.pitch = (player.pitch + drag.y * sens).coerceIn(-89f, 89f)
@@ -350,7 +376,7 @@ fun GameScreen(
       }
     }
 
-    // 5. Top Bar: Minecraft 0.0.0 Classic Header & Controls
+    // 5. Top Bar: Version, Coordinates, Multiplayer Server Badge & Controls
     Row(
       modifier = Modifier
         .fillMaxWidth()
@@ -358,7 +384,6 @@ fun GameScreen(
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.Top
     ) {
-      // Top Left: Minecraft 0.0.0 Classic Header & Debug Coordinates
       Column(
         modifier = Modifier
           .background(Color(0x88000000), RoundedCornerShape(2.dp))
@@ -376,6 +401,14 @@ fun GameScreen(
           fontSize = 10,
           fontWeight = FontWeight.Normal
         )
+        if (mpState.isActive) {
+          ClassicShadowText(
+            text = "Servidor ${mpState.serverCode} (${mpState.currentPlayers}/${mpState.maxPlayers})",
+            color = BedrockColors.TextGreen,
+            fontSize = 10,
+            fontWeight = FontWeight.Bold
+          )
+        }
         if (showF3Debug) {
           ClassicShadowText(
             text = "fps: 60, yaw: ${player.yaw.toInt()}° pitch: ${player.pitch.toInt()}°",
@@ -440,7 +473,7 @@ fun GameScreen(
       }
     }
 
-    // 6. Bottom-Left: Authentic Bedrock Touch D-Pad (Instantaneous response)
+    // 6. Bottom-Left: Authentic Bedrock Touch D-Pad
     Box(
       modifier = Modifier
         .align(Alignment.BottomStart)
@@ -455,7 +488,6 @@ fun GameScreen(
           .border(1.5.dp, BedrockColors.DpadBorder, RoundedCornerShape(14.dp))
       )
 
-      // Forward (▲)
       BedrockDpadKey(
         text = "▲",
         modifier = Modifier
@@ -465,7 +497,6 @@ fun GameScreen(
         onReleased = { moveForward = 0f }
       )
 
-      // Backward (▼)
       BedrockDpadKey(
         text = "▼",
         modifier = Modifier
@@ -475,7 +506,6 @@ fun GameScreen(
         onReleased = { moveForward = 0f }
       )
 
-      // Left Strafe (◀)
       BedrockDpadKey(
         text = "◀",
         modifier = Modifier
@@ -485,7 +515,6 @@ fun GameScreen(
         onReleased = { moveStrafe = 0f }
       )
 
-      // Right Strafe (▶)
       BedrockDpadKey(
         text = "▶",
         modifier = Modifier
@@ -495,7 +524,6 @@ fun GameScreen(
         onReleased = { moveStrafe = 0f }
       )
 
-      // Center: Bedrock Sneak (◆)
       Box(
         modifier = Modifier
           .align(Alignment.Center)
@@ -526,10 +554,9 @@ fun GameScreen(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.Bottom
       ) {
-        // Flight toggle in Creative
         if (player.gameMode == GameMode.CREATIVE) {
           BedrockActionButton(
-            text = if (player.isFlying) "🪶 Voar" else "🚶 Chão",
+            text = if (player.isFlying) "Voar" else "Chão",
             color = if (player.isFlying) Color(0xCC00897B) else Color(0xCC455A64),
             onClick = {
               player.isFlying = !player.isFlying
@@ -538,7 +565,6 @@ fun GameScreen(
           )
         }
 
-        // Circular Jump Button (Instant press)
         BedrockHoldActionButton(
           text = "▲",
           color = Color(0xCC374151),
@@ -549,7 +575,7 @@ fun GameScreen(
       }
     }
 
-    // 8. Bottom Center: Bedrock Hotbar & Status Bars (Hearts, Hunger)
+    // 8. Bottom Center: Bedrock Hotbar (with custom ItemIcon per item) & Status Bars
     Column(
       modifier = Modifier
         .align(Alignment.BottomCenter)
@@ -564,7 +590,6 @@ fun GameScreen(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
-          // 10 Hearts
           Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             val hearts = (player.health / 2f).coerceIn(0f, 10f)
             for (i in 1..10) {
@@ -575,7 +600,6 @@ fun GameScreen(
             }
           }
 
-          // 10 Drumsticks
           Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
             val drumsticks = (player.hunger / 2f).coerceIn(0f, 10f)
             for (i in 1..10) {
@@ -588,7 +612,9 @@ fun GameScreen(
         }
       }
 
-      // 9-Slot Bedrock Hotbar + Inventory Button [...]
+      // Trigger recomposition when inventory changes
+      val invTick = inventoryVersion
+
       Row(
         modifier = Modifier
           .background(BedrockColors.HudBg, RoundedCornerShape(6.dp))
@@ -598,7 +624,7 @@ fun GameScreen(
         verticalAlignment = Alignment.CenterVertically
       ) {
         for (i in 0 until 9) {
-          val stack = player.inventory.slots[i]
+          val stack = if (invTick >= 0) player.inventory.slots[i] else null
           val isSelected = (i == player.inventory.selectedHotbarIndex)
 
           Box(
@@ -621,10 +647,7 @@ fun GameScreen(
             contentAlignment = Alignment.Center
           ) {
             if (stack != null) {
-              Text(
-                text = stack.item.iconEmoji,
-                fontSize = 18.sp
-              )
+              ItemIcon(item = stack.item, size = 24.dp)
               if (stack.count > 1) {
                 ClassicShadowText(
                   text = "${stack.count}",
@@ -641,7 +664,6 @@ fun GameScreen(
           }
         }
 
-        // Classic Minecraft 0.0.0 "B" (Block Selector / Inventory) Button
         Box(
           modifier = Modifier
             .size(36.dp)
@@ -664,23 +686,56 @@ fun GameScreen(
       }
     }
 
-    // 9. Dialogs: Bedrock Inventory & Minimalist Pause Menu
+    // 9. Dialogs: Bedrock Inventory & Pause Menu (with live 5-player Server Toggle)
     if (showInventory) {
       InventoryDialog(
         player = player,
         hasCraftingTable = hasCraftingTableOpen,
-        onDismiss = { showInventory = false }
+        onDismiss = {
+          inventoryVersion++
+          showInventory = false
+        }
       )
     }
 
     if (showPauseMenu) {
+      val needsGoogleSignIn = multiplayerGateway != null &&
+          multiplayerGateway.requiresSignIn &&
+          mpUserUid == null
+
       PauseMenuDialog(
         versionTag = versionTag,
+        sessionState = mpState,
+        canHostOnline = multiplayerGateway != null,
+        needsGoogleSignInForServer = needsGoogleSignIn,
+        onGoogleSignInClick = if (multiplayerGateway != null) {
+          {
+            scope.launch {
+              multiplayerGateway.signInWithGoogle(context)
+            }
+          }
+        } else null,
+        onToggleServer = if (multiplayerGateway != null) {
+          {
+            scope.launch {
+              if (mpState.isActive) {
+                multiplayerGateway.closeOrLeaveServer()
+              } else {
+                multiplayerGateway.hostWorldAsServer(worldInfo, world, player)
+              }
+            }
+          }
+        } else null,
         onResume = { showPauseMenu = false },
         onSaveAndQuit = {
-          storage.saveWorld(worldInfo, world, player)
+          if (!isRemoteClient) {
+            storage.saveWorld(worldInfo, world, player)
+          }
           showPauseMenu = false
-          onExitToTitle()
+          scope.launch {
+            multiplayerGateway?.closeOrLeaveServer()
+            onExitToTitle()
+          }
         }
       )
     }

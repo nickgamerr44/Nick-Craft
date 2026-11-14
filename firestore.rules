@@ -1,0 +1,168 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 2 && id.size() <= 80 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isServerMember(serverId) {
+      let serverDoc = get(/databases/$(database)/documents/world_servers/$(serverId));
+      return serverDoc != null && request.auth.uid in serverDoc.data.memberUids;
+    }
+
+    function isServerHost(serverId) {
+      let serverDoc = get(/databases/$(database)/documents/world_servers/$(serverId));
+      return serverDoc != null && serverDoc.data.hostUid == request.auth.uid;
+    }
+
+    function isValidServerShape(data) {
+      return data.keys().hasAll([
+        'serverCode', 'worldName', 'hostUid', 'hostName',
+        'gameMode', 'seed', 'maxPlayers', 'memberUids',
+        'isOpen', 'blocksBase64', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'serverCode', 'worldName', 'hostUid', 'hostName',
+        'gameMode', 'seed', 'maxPlayers', 'memberUids',
+        'isOpen', 'blocksBase64', 'createdAt', 'updatedAt'
+      ]) &&
+      data.serverCode is string && data.serverCode.size() >= 4 && data.serverCode.size() <= 16 &&
+      data.worldName is string && data.worldName.size() >= 1 && data.worldName.size() <= 60 &&
+      data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+      data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 60 &&
+      (data.gameMode == 'SURVIVAL' || data.gameMode == 'CREATIVE') &&
+      data.seed is int &&
+      data.maxPlayers is int && data.maxPlayers == 5 &&
+      data.memberUids is list && data.memberUids.size() >= 1 && data.memberUids.size() <= 5 &&
+      data.isOpen is bool &&
+      data.blocksBase64 is string && data.blocksBase64.size() >= 4 && data.blocksBase64.size() <= 300000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    match /world_servers/{serverId} {
+      // Single-doc get: signed-in user looking up a server by code/id
+      allow get: if isSignedIn() && isValidId(serverId);
+
+      // List: only open servers or servers where caller is already a member
+      allow list: if isSignedIn() && (
+        resource.data.isOpen == true ||
+        request.auth.uid in resource.data.memberUids
+      );
+
+      // Create: caller must be host, maxPlayers strictly 5, memberUids == [hostUid]
+      allow create: if isSignedIn() &&
+        isValidId(serverId) &&
+        isValidServerShape(request.resource.data) &&
+        request.resource.data.hostUid == request.auth.uid &&
+        request.resource.data.isOpen == true &&
+        request.resource.data.memberUids.size() == 1 &&
+        request.resource.data.memberUids[0] == request.auth.uid &&
+        request.resource.data.createdAt <= request.time &&
+        request.resource.data.updatedAt <= request.time;
+
+      // Update: host maintenance, join (strictly < 5 members), or member leave
+      allow update: if isSignedIn() &&
+        isValidId(serverId) &&
+        isValidServerShape(request.resource.data) &&
+        request.resource.data.hostUid == resource.data.hostUid &&
+        request.resource.data.serverCode == resource.data.serverCode &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.maxPlayers == 5 &&
+        request.resource.data.updatedAt <= request.time && (
+          // 1. Host updates open state / world snapshot / member roster (max 5)
+          (
+            resource.data.hostUid == request.auth.uid &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOpen', 'blocksBase64', 'memberUids', 'updatedAt']) &&
+            request.resource.data.hostUid in request.resource.data.memberUids
+          ) ||
+          // 2. Player joins open server (strict 5-player cap)
+          (
+            resource.data.isOpen == true &&
+            !(request.auth.uid in resource.data.memberUids) &&
+            resource.data.memberUids.size() < 5 &&
+            request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1 &&
+            request.auth.uid in request.resource.data.memberUids &&
+            request.resource.data.memberUids.hasAll(resource.data.memberUids) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+          ) ||
+          // 3. Non-host member leaves server
+          (
+            request.auth.uid in resource.data.memberUids &&
+            request.auth.uid != resource.data.hostUid &&
+            !(request.auth.uid in request.resource.data.memberUids) &&
+            request.resource.data.memberUids.size() == resource.data.memberUids.size() - 1 &&
+            resource.data.memberUids.hasAll(request.resource.data.memberUids) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids', 'updatedAt'])
+          )
+        );
+
+      allow delete: if isSignedIn() &&
+        isValidId(serverId) &&
+        resource.data.hostUid == request.auth.uid;
+
+      match /players/{playerUid} {
+        allow get: if isSignedIn() && isValidId(serverId) && isValidId(playerUid) && isServerMember(serverId);
+        allow list: if isSignedIn() && isValidId(serverId) && isServerMember(serverId);
+
+        allow create, update: if isSignedIn() &&
+          isValidId(serverId) &&
+          isValidId(playerUid) &&
+          request.auth.uid == playerUid &&
+          isServerMember(serverId) &&
+          request.resource.data.keys().hasAll(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt']) &&
+          request.resource.data.keys().hasOnly(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt']) &&
+          request.resource.data.uid == request.auth.uid &&
+          request.resource.data.displayName is string &&
+          request.resource.data.displayName.size() >= 1 &&
+          request.resource.data.displayName.size() <= 40 &&
+          request.resource.data.x is number &&
+          request.resource.data.y is number &&
+          request.resource.data.z is number &&
+          request.resource.data.yaw is number &&
+          request.resource.data.pitch is number &&
+          request.resource.data.slotIndex is int &&
+          request.resource.data.slotIndex >= 0 &&
+          request.resource.data.slotIndex < 5 &&
+          request.resource.data.updatedAt is timestamp &&
+          request.resource.data.updatedAt <= request.time;
+
+        allow delete: if isSignedIn() &&
+          isValidId(serverId) &&
+          isValidId(playerUid) &&
+          (request.auth.uid == playerUid || isServerHost(serverId));
+      }
+
+      match /block_edits/{editId} {
+        allow get: if isSignedIn() && isValidId(serverId) && isValidId(editId) && isServerMember(serverId);
+        allow list: if isSignedIn() && isValidId(serverId) && isServerMember(serverId);
+
+        allow create: if isSignedIn() &&
+          isValidId(serverId) &&
+          isValidId(editId) &&
+          isServerMember(serverId) &&
+          request.resource.data.keys().hasAll(['x', 'y', 'z', 'blockId', 'authorUid', 'createdAt']) &&
+          request.resource.data.keys().hasOnly(['x', 'y', 'z', 'blockId', 'authorUid', 'createdAt']) &&
+          request.resource.data.x is int && request.resource.data.x >= 0 && request.resource.data.x < 128 &&
+          request.resource.data.y is int && request.resource.data.y >= 0 && request.resource.data.y < 64 &&
+          request.resource.data.z is int && request.resource.data.z >= 0 && request.resource.data.z < 128 &&
+          request.resource.data.blockId is int && request.resource.data.blockId >= 0 && request.resource.data.blockId <= 127 &&
+          request.resource.data.authorUid == request.auth.uid &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdAt <= request.time;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -20,6 +20,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.minecraft.data.WorldInfo
 import com.example.minecraft.data.WorldStorage
+import com.example.minecraft.model.VoxelWorld
+import com.example.minecraft.multiplayer.FirestoreMultiplayerGateway
 import com.example.minecraft.ui.GameMainMenuScreen
 import com.example.minecraft.ui.GameScreen
 
@@ -63,16 +65,21 @@ class GameMainActivity : ComponentActivity() {
 private fun StandaloneNickCraftApp() {
   val context = LocalContext.current
   val storage = remember { WorldStorage(context) }
+  val multiplayerGateway = remember { FirestoreMultiplayerGateway(context) }
 
   var currentScreen by remember { mutableStateOf(StandaloneScreen.TITLE) }
   var activeWorldInfo by remember { mutableStateOf<WorldInfo?>(null) }
+  var activeStartAsServer by remember { mutableStateOf(false) }
+  var activePreloadedWorld by remember { mutableStateOf<VoxelWorld?>(null) }
+  var activeIsRemoteClient by remember { mutableStateOf(false) }
 
   when (currentScreen) {
     StandaloneScreen.TITLE -> {
       GameMainMenuScreen(
         storage = storage,
-        versionTag = "0.02",
-        onStartGame = { worldName, gameMode, seed, worldId ->
+        versionTag = "0.03",
+        multiplayerGateway = multiplayerGateway,
+        onStartGame = { worldName, gameMode, seed, worldId, startAsServer, preloadedWorld, isRemoteClient ->
           val id = worldId ?: "world_${System.currentTimeMillis()}"
           activeWorldInfo = WorldInfo(
             id = id,
@@ -81,6 +88,9 @@ private fun StandaloneNickCraftApp() {
             seed = seed,
             lastPlayed = System.currentTimeMillis()
           )
+          activeStartAsServer = startAsServer
+          activePreloadedWorld = preloadedWorld
+          activeIsRemoteClient = isRemoteClient
           currentScreen = StandaloneScreen.GAME
         }
       )
@@ -90,11 +100,18 @@ private fun StandaloneNickCraftApp() {
       activeWorldInfo?.let { worldInfo ->
         GameScreen(
           worldInfo = worldInfo,
-          versionTag = "0.02",
+          versionTag = "0.03",
           storage = storage,
+          multiplayerGateway = multiplayerGateway,
+          initialStartAsServer = activeStartAsServer,
+          preloadedWorld = activePreloadedWorld,
+          isRemoteClient = activeIsRemoteClient,
           onExitToTitle = {
             currentScreen = StandaloneScreen.TITLE
             activeWorldInfo = null
+            activeStartAsServer = false
+            activePreloadedWorld = null
+            activeIsRemoteClient = false
           }
         )
       }

@@ -119,7 +119,7 @@ fun InventoryDialog(
           verticalAlignment = Alignment.CenterVertically
         ) {
           Text(
-            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft 0.02" else "Select Block / Inventário (0.02)",
+            text = if (hasCraftingTable) "Bancada 3x3 • Nick Craft 0.03" else "Inventário • Nick Craft 0.03",
             color = BedrockColors.TextWhite,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
@@ -161,25 +161,25 @@ fun InventoryDialog(
               horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
               CategoryTab(
-                icon = "🧱",
+                category = ItemCategory.BLOCK,
                 isSelected = selectedCategory == ItemCategory.BLOCK,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.BLOCK) null else ItemCategory.BLOCK },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
-                icon = "⛏️",
+                category = ItemCategory.TOOL,
                 isSelected = selectedCategory == ItemCategory.TOOL,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.TOOL) null else ItemCategory.TOOL },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
-                icon = "🗡️",
+                category = ItemCategory.WEAPON,
                 isSelected = selectedCategory == ItemCategory.WEAPON,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.WEAPON) null else ItemCategory.WEAPON },
                 modifier = Modifier.weight(1f)
               )
               CategoryTab(
-                icon = "🍖",
+                category = ItemCategory.FOOD,
                 isSelected = selectedCategory == ItemCategory.FOOD,
                 onClick = { selectedCategory = if (selectedCategory == ItemCategory.FOOD) null else ItemCategory.FOOD },
                 modifier = Modifier.weight(1f)
@@ -215,7 +215,7 @@ fun InventoryDialog(
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically
                   ) {
-                    Text(text = recipe.result.item.iconEmoji, fontSize = 18.sp)
+                    ItemIcon(item = recipe.result.item, size = 22.dp)
                     Spacer(modifier = Modifier.width(6.dp))
                     Column {
                       Text(
@@ -298,7 +298,7 @@ fun InventoryDialog(
                   contentAlignment = Alignment.Center
                 ) {
                   if (stack != null) {
-                    Text(text = stack.item.iconEmoji, fontSize = 16.sp)
+                    ItemIcon(item = stack.item, size = 22.dp)
                     if (stack.count > 1) {
                       Text(
                         text = "${stack.count}",
@@ -351,7 +351,7 @@ fun InventoryDialog(
                     contentAlignment = Alignment.Center
                   ) {
                     if (stack != null) {
-                      Text(text = stack.item.iconEmoji, fontSize = 16.sp)
+                      ItemIcon(item = stack.item, size = 22.dp)
                       if (stack.count > 1) {
                         Text(
                           text = "${stack.count}",
@@ -384,7 +384,7 @@ fun InventoryDialog(
             ) {
               if (active != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                  Text(text = active.item.iconEmoji, fontSize = 16.sp)
+                  ItemIcon(item = active.item, size = 24.dp)
                   Spacer(modifier = Modifier.width(6.dp))
                   Column {
                     Text(
@@ -455,7 +455,7 @@ fun InventoryDialog(
 
 @Composable
 private fun CategoryTab(
-  icon: String,
+  category: ItemCategory,
   isSelected: Boolean,
   onClick: () -> Unit,
   modifier: Modifier = Modifier
@@ -475,6 +475,6 @@ private fun CategoryTab(
       .clickable(onClick = onClick),
     contentAlignment = Alignment.Center
   ) {
-    Text(text = icon, fontSize = 14.sp)
+    CategoryTabIcon(category = category, size = 18.dp)
   }
 }

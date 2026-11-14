@@ -11,6 +11,7 @@ import com.example.minecraft.model.Particle
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.RaycastHit
 import com.example.minecraft.model.VoxelWorld
+import com.example.minecraft.multiplayer.RemotePlayerState
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -30,6 +31,7 @@ class VoxelRenderer(
   var breakProgress: Float = 0f
   var timeOfDay: Float = 6000f // 0..24000 (6000 = noon, 12000 = sunset, 18000 = midnight, 24000 = dawn)
   var viewDistanceFog: Float = 32f
+  @Volatile var remotePlayers: List<RemotePlayerState> = emptyList()
   private var screenAspect: Float = 1.777f
 
   private val mvpMatrix = FloatArray(16)
@@ -226,7 +228,10 @@ class VoxelRenderer(
       renderBlockOutline(hit.blockX, hit.blockY, hit.blockZ)
     }
 
-    // 9. Render Steve in 3rd Person or Hand in 1st Person
+    // 9. Render Remote Multiplayer Players
+    renderRemotePlayers(sunlight)
+
+    // 10. Render Steve in 3rd Person or Hand in 1st Person
     if (player.isThirdPerson) {
       renderStevePlayer(sunlight)
     } else {
@@ -540,6 +545,72 @@ class VoxelRenderer(
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
     Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
     drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)
+  }
+
+  private fun renderRemotePlayers(sunlight: Float) {
+    val peers = remotePlayers
+    if (peers.isEmpty()) return
+
+    GLES20.glUseProgram(programId)
+    GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, TextureAtlas.textureId)
+    GLES20.glUniform1i(uTextureLoc, 0)
+    GLES20.glUniform1f(uSunlightLoc, max(0.45f, sunlight))
+
+    for (rp in peers) {
+      // Head
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.48f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.rotateM(modelMatrix, 0, rp.pitch, 1f, 0f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.20f, 0.20f, 0.20f, 34, 38, 35, 29, 36, 36)
+
+      // Torso
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.90f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.20f, 0.30f, 0.11f, 31, 31, 31, 30, 31, 31)
+
+      // Left Arm
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, -0.28f, -0.26f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
+
+      // Right Arm
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0.28f, -0.26f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
+
+      // Left Leg
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, -0.10f, 0f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)
+
+      // Right Leg
+      Matrix.setIdentityM(modelMatrix, 0)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f, rp.z)
+      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0.10f, 0f, 0f)
+      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
+      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+      drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)
+    }
   }
 
   private fun renderHandTool(sunlight: Float) {

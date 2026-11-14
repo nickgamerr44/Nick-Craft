@@ -1,0 +1,52 @@
+{
+  "databaseId": "ai-studio-android-craftjav-6e425379-0e74-4e3e-8426-ff0352412cbe",
+  "collections": [
+    {
+      "path": "world_servers/{serverId}",
+      "description": "Multiplayer voxel world servers hosted by players with a strict 5-player capacity limit.",
+      "fields": {
+        "serverCode": { "type": "string", "description": "Short 6-character join code (e.g. NC4829)." },
+        "worldName": { "type": "string", "description": "Display name of the hosted world." },
+        "hostUid": { "type": "string", "description": "Firebase Auth UID of the host player." },
+        "hostName": { "type": "string", "description": "Display name of the host player." },
+        "gameMode": { "type": "string", "description": "SURVIVAL or CREATIVE." },
+        "seed": { "type": "number", "description": "World generation seed." },
+        "maxPlayers": { "type": "number", "description": "Always 5 players maximum." },
+        "memberUids": { "type": "array", "description": "List of currently joined player UIDs (max size 5)." },
+        "isOpen": { "type": "boolean", "description": "Whether the server is currently accepting players." },
+        "blocksBase64": { "type": "string", "description": "GZIP+Base64 encoded initial voxel grid snapshot." },
+        "createdAt": { "type": "timestamp", "description": "Server creation timestamp." },
+        "updatedAt": { "type": "timestamp", "description": "Last server update timestamp." }
+      },
+      "subcollections": [
+        {
+          "path": "players/{playerUid}",
+          "description": "Real-time position, rotation, and avatar slot of each connected player.",
+          "fields": {
+            "uid": { "type": "string" },
+            "displayName": { "type": "string" },
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" },
+            "yaw": { "type": "number" },
+            "pitch": { "type": "number" },
+            "slotIndex": { "type": "number" },
+            "updatedAt": { "type": "timestamp" }
+          }
+        },
+        {
+          "path": "block_edits/{editId}",
+          "description": "Immutable stream of block placements and breaks synchronized across players.",
+          "fields": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" },
+            "blockId": { "type": "number" },
+            "authorUid": { "type": "string" },
+            "createdAt": { "type": "timestamp" }
+          }
+        }
+      ]
+    }
+  ]
+}

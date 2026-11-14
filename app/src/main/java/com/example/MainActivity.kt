@@ -17,6 +17,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.minecraft.data.WorldInfo
 import com.example.minecraft.data.WorldStorage
+import com.example.minecraft.model.VoxelWorld
+import com.example.minecraft.multiplayer.FirestoreMultiplayerGateway
 import com.example.minecraft.ui.GameMainMenuScreen
 import com.example.minecraft.ui.GameScreen
 import com.example.minecraft.ui.TitleScreen
@@ -63,10 +65,14 @@ class MainActivity : ComponentActivity() {
 fun NickCraftLauncherApp() {
   val context = androidx.compose.ui.platform.LocalContext.current
   val storage = remember { WorldStorage(context) }
+  val multiplayerGateway = remember { FirestoreMultiplayerGateway(context) }
 
   var currentScreen by remember { mutableStateOf(AppScreen.LAUNCHER) }
   var activeWorldInfo by remember { mutableStateOf<WorldInfo?>(null) }
-  var activeVersionTag by remember { mutableStateOf("0.02") }
+  var activeVersionTag by remember { mutableStateOf("0.03") }
+  var activeStartAsServer by remember { mutableStateOf(false) }
+  var activePreloadedWorld by remember { mutableStateOf<VoxelWorld?>(null) }
+  var activeIsRemoteClient by remember { mutableStateOf(false) }
 
   when (currentScreen) {
     AppScreen.LAUNCHER -> {
@@ -82,7 +88,8 @@ fun NickCraftLauncherApp() {
       GameMainMenuScreen(
         storage = storage,
         versionTag = activeVersionTag,
-        onStartGame = { worldName, gameMode, seed, worldId ->
+        multiplayerGateway = multiplayerGateway,
+        onStartGame = { worldName, gameMode, seed, worldId, startAsServer, preloadedWorld, isRemoteClient ->
           val id = worldId ?: "world_${System.currentTimeMillis()}"
           activeWorldInfo = WorldInfo(
             id = id,
@@ -91,6 +98,9 @@ fun NickCraftLauncherApp() {
             seed = seed,
             lastPlayed = System.currentTimeMillis()
           )
+          activeStartAsServer = startAsServer
+          activePreloadedWorld = preloadedWorld
+          activeIsRemoteClient = isRemoteClient
           currentScreen = AppScreen.GAME
         },
         onExitToLauncher = {
@@ -105,9 +115,16 @@ fun NickCraftLauncherApp() {
           worldInfo = worldInfo,
           versionTag = activeVersionTag,
           storage = storage,
+          multiplayerGateway = multiplayerGateway,
+          initialStartAsServer = activeStartAsServer,
+          preloadedWorld = activePreloadedWorld,
+          isRemoteClient = activeIsRemoteClient,
           onExitToTitle = {
             currentScreen = AppScreen.GAME_MENU
             activeWorldInfo = null
+            activeStartAsServer = false
+            activePreloadedWorld = null
+            activeIsRemoteClient = false
           }
         )
       }

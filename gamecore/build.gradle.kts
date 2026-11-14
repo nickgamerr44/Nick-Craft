@@ -23,6 +23,7 @@ android {
 
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
+  api(platform(libs.firebase.bom))
   implementation(libs.androidx.activity.compose)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material3)
@@ -30,4 +31,9 @@ dependencies {
   implementation(libs.androidx.compose.ui.graphics)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  api(libs.firebase.firestore)
+  api(libs.firebase.auth)
+  api(libs.androidx.credentials)
+  api(libs.androidx.credentials.play.services)
+  api(libs.googleid)
 }

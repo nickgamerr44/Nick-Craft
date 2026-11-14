@@ -1,5 +1,11 @@
 # Novidades do Nick Craft
 
+## 0.03 - Ícones Próprios e Multiplayer Online (14/11/2026)
+
+- Ícone próprio em pixel art para cada item do jogo (blocos, ferramentas, armas, minérios, alimentos e materiais).
+- Novo Multiplayer Online (funciona à distância entre redes diferentes): transforme qualquer mundo seu em servidor com código de acesso e limite de até 5 jogadores conectados ao mesmo tempo.
+- Sincronização em tempo real dos jogadores em 3D e das construções/quebras de blocos.
+
 ## 0.02 - Correção de Controles e Remoção de Mobs (14/11/2026)
 
 - Movimento lateral corrigido: andar para a direita agora vai para a direita e andar para a esquerda vai para a esquerda.

@@ -291,7 +291,7 @@ class GitHubLauncherRepository(
         discovered.add(
           GameVersionEntry(
             id = id,
-            versionTag = "0.02",
+            versionTag = "0.03",
             title = "Nick Craft ($branch)",
             source = VersionSource.GITHUB_BRANCH,
             description = if (latestSha != null)
@@ -515,7 +515,7 @@ class GitHubLauncherRepository(
         discovered.add(
           GameVersionEntry(
             id = id,
-            versionTag = "0.02",
+            versionTag = "0.03",
             title = "Nick Craft ($branch)",
             source = VersionSource.GITHUB_BRANCH,
             description = if (latestSha != null)

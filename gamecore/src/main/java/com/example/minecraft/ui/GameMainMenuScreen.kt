@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,24 +36,41 @@ import androidx.compose.ui.unit.sp
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.engine.AudioEngine
 import com.example.minecraft.model.GameMode
+import com.example.minecraft.model.Player
+import com.example.minecraft.model.VoxelWorld
+import com.example.minecraft.multiplayer.MultiplayerGateway
+import kotlinx.coroutines.launch
 
 @Composable
 fun GameMainMenuScreen(
   storage: WorldStorage,
-  versionTag: String = "0.02",
-  onStartGame: (worldName: String, gameMode: GameMode, seed: Long, worldId: String?) -> Unit,
+  versionTag: String = "0.03",
+  multiplayerGateway: MultiplayerGateway? = null,
+  onStartGame: (
+    worldName: String,
+    gameMode: GameMode,
+    seed: Long,
+    worldId: String?,
+    startAsServer: Boolean,
+    preloadedWorld: VoxelWorld?,
+    isRemoteClient: Boolean
+  ) -> Unit,
   onExitToLauncher: (() -> Unit)? = null
 ) {
   var showNewWorldDialog by remember { mutableStateOf(false) }
   var showLoadWorldDialog by remember { mutableStateOf(false) }
+  var showMultiplayerDialog by remember { mutableStateOf(false) }
   var showHelpDialog by remember { mutableStateOf(false) }
   var showOptionsDialog by remember { mutableStateOf(false) }
   var sensitivity by remember { mutableFloatStateOf(1.0f) }
 
+  val scope = rememberCoroutineScope()
   val worlds = remember { storage.listWorlds() }
 
   if (onExitToLauncher != null) {
-    BackHandler(enabled = !showNewWorldDialog && !showLoadWorldDialog && !showHelpDialog && !showOptionsDialog) {
+    BackHandler(
+      enabled = !showNewWorldDialog && !showLoadWorldDialog && !showMultiplayerDialog && !showHelpDialog && !showOptionsDialog
+    ) {
       onExitToLauncher()
     }
   }
@@ -106,6 +124,32 @@ fun GameMainMenuScreen(
           color = Color(0xFFFFFFFF),
           modifier = Modifier.padding(vertical = 4.dp)
         )
+      }
+
+      if (multiplayerGateway != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+          modifier = Modifier
+            .widthIn(max = 300.dp)
+            .fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF203A2E))
+            .clickable {
+              AudioEngine.playPop()
+              showMultiplayerDialog = true
+            }
+            .padding(8.dp)
+            .testTag("multiplayer_menu_button"),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = "Multiplayer (Máx. 5)",
+            fontSize = 15.sp,
+            color = Color(0xFFA7F3D0),
+            modifier = Modifier.padding(vertical = 4.dp)
+          )
+        }
       }
 
       Spacer(modifier = Modifier.height(8.dp))
@@ -210,7 +254,7 @@ fun GameMainMenuScreen(
         onDismiss = { showNewWorldDialog = false },
         onCreate = { name, mode, seed ->
           showNewWorldDialog = false
-          onStartGame(name, mode, seed, null)
+          onStartGame(name, mode, seed, null, false, null, false)
         }
       )
     }
@@ -225,8 +269,58 @@ fun GameMainMenuScreen(
         },
         onSelectWorld = { world ->
           showLoadWorldDialog = false
-          onStartGame(world.name, world.gameMode, world.seed, world.id)
+          onStartGame(world.name, world.gameMode, world.seed, world.id, false, null, false)
         }
+      )
+    }
+
+    if (showMultiplayerDialog && multiplayerGateway != null) {
+      MultiplayerDialog(
+        gateway = multiplayerGateway,
+        storage = storage,
+        onHostWorld = { worldInfo ->
+          showMultiplayerDialog = false
+          onStartGame(worldInfo.name, worldInfo.gameMode, worldInfo.seed, worldInfo.id, true, null, false)
+        },
+        onJoinByCode = { code ->
+          scope.launch {
+            val remoteWorld = VoxelWorld()
+            val tempPlayer = Player()
+            val res = multiplayerGateway.joinServerByCode(code, remoteWorld, tempPlayer)
+            res.onSuccess { joinedInfo ->
+              showMultiplayerDialog = false
+              onStartGame(
+                joinedInfo.name,
+                joinedInfo.gameMode,
+                joinedInfo.seed,
+                joinedInfo.id,
+                false,
+                remoteWorld,
+                true
+              )
+            }
+          }
+        },
+        onJoinServer = { summary ->
+          scope.launch {
+            val remoteWorld = VoxelWorld()
+            val tempPlayer = Player()
+            val res = multiplayerGateway.joinServer(summary, remoteWorld, tempPlayer)
+            res.onSuccess { joinedInfo ->
+              showMultiplayerDialog = false
+              onStartGame(
+                joinedInfo.name,
+                joinedInfo.gameMode,
+                joinedInfo.seed,
+                joinedInfo.id,
+                false,
+                remoteWorld,
+                true
+              )
+            }
+          }
+        },
+        onDismiss = { showMultiplayerDialog = false }
       )
     }
 

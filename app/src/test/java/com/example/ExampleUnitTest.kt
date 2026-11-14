@@ -496,4 +496,31 @@ class ExampleUnitTest {
     }
     assertTrue("Pressing right at yaw=90 must move toward -Z", rotatedRight.z < 16.5f)
   }
+
+  @Test
+  fun testMultiplayerMax5PlayersEnforcement() {
+    assertEquals(5, com.example.minecraft.multiplayer.MAX_MULTIPLAYER_PLAYERS)
+
+    val openServer = com.example.minecraft.multiplayer.ServerSummary(
+      serverId = "NC1234",
+      serverCode = "NC1234",
+      worldName = "Survival",
+      hostName = "Nick",
+      gameMode = GameMode.SURVIVAL,
+      seed = 42L,
+      currentPlayers = 4,
+      maxPlayers = 5
+    )
+    assertFalse(openServer.isFull)
+
+    val fullServer = openServer.copy(currentPlayers = 5)
+    assertTrue(fullServer.isFull)
+  }
+
+  @Test
+  fun testAllItemsDefinedForCustomIcons() {
+    val allItems = ItemType.entries
+    assertEquals(31, allItems.size)
+    assertEquals(allItems.size, allItems.map { it.id }.toSet().size)
+  }
 }

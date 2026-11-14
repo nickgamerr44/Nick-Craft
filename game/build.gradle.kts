@@ -1,6 +1,9 @@
+import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
+  alias(libs.plugins.google.services)
 }
 
 android {
@@ -11,8 +14,8 @@ android {
     applicationId = "com.aistudio.nickcraft.game"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "0.02"
+    versionCode = 4
+    versionName = "0.03"
   }
 
   signingConfigs {
@@ -57,6 +60,8 @@ android {
     includeInBundle = true
   }
 }
+
+googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 dependencies {
   implementation(project(":gamecore"))
