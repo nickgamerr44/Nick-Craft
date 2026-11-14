@@ -22,7 +22,7 @@ import androidx.compose.ui.window.Dialog
 fun PauseMenuDialog(
   onResume: () -> Unit,
   onSaveAndQuit: () -> Unit,
-  versionTag: String = "0.01"
+  versionTag: String = "0.02"
 ) {
   Dialog(onDismissRequest = onResume) {
     Box(

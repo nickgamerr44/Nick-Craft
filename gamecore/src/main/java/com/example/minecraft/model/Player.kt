@@ -101,8 +101,8 @@ class Player(
     val radYaw = Math.toRadians(yaw.toDouble())
     val forwardX = -sin(radYaw).toFloat()
     val forwardZ = cos(radYaw).toFloat()
-    val rightX = cos(radYaw).toFloat()
-    val rightZ = sin(radYaw).toFloat()
+    val rightX = -cos(radYaw).toFloat()
+    val rightZ = -sin(radYaw).toFloat()
 
     val baseSpeed = when {
       isFlying -> 0.18f
@@ -245,27 +245,6 @@ class Player(
     }
     x = x.coerceIn(0.5f, world.width - 0.5f)
     z = z.coerceIn(0.5f, world.length - 0.5f)
-
-    // Mob physical solid collision: Steve cannot be passed through by mobs
-    for (mob in world.mobs) {
-      if (mob.isDead) continue
-      val dx = x - mob.x
-      val dz = z - mob.z
-      val dy = abs(y - mob.y)
-      if (dy < 1.6f) {
-        val dist = sqrt(dx * dx + dz * dz)
-        val minDist = 0.65f
-        if (dist in 0.001f..minDist) {
-          val push = (minDist - dist) * 0.5f
-          val nx = dx / dist
-          val nz = dz / dist
-          x += nx * push
-          z += nz * push
-          mob.x -= nx * push
-          mob.z -= nz * push
-        }
-      }
-    }
   }
 
   private fun checkCollision(world: VoxelWorld, cx: Float, cy: Float, cz: Float, hw: Float, h: Float): Boolean {

@@ -26,7 +26,6 @@ class VoxelWorld(
 
   // Track modification for saving & fast mesh dirty flags
   var isDirty: Boolean = true
-  val mobs = mutableListOf<Mob>()
   val particles = mutableListOf<Particle>()
 
   fun getIndex(x: Int, y: Int, z: Int): Int {
@@ -153,15 +152,6 @@ class VoxelWorld(
             }
           }
         }
-      }
-    }
-
-    // Damage nearby mobs
-    for (mob in mobs) {
-      val d = sqrt((mob.x - centerX) * (mob.x - centerX) + (mob.y - centerY) * (mob.y - centerY) + (mob.z - centerZ) * (mob.z - centerZ))
-      if (d < radius + 1f) {
-        val dmg = (radius + 1f - d) * 6f
-        mob.takeDamage(dmg)
       }
     }
   }

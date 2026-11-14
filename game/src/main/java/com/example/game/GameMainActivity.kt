@@ -71,7 +71,7 @@ private fun StandaloneNickCraftApp() {
     StandaloneScreen.TITLE -> {
       GameMainMenuScreen(
         storage = storage,
-        versionTag = "0.01",
+        versionTag = "0.02",
         onStartGame = { worldName, gameMode, seed, worldId ->
           val id = worldId ?: "world_${System.currentTimeMillis()}"
           activeWorldInfo = WorldInfo(
@@ -90,7 +90,7 @@ private fun StandaloneNickCraftApp() {
       activeWorldInfo?.let { worldInfo ->
         GameScreen(
           worldInfo = worldInfo,
-          versionTag = "0.01",
+          versionTag = "0.02",
           storage = storage,
           onExitToTitle = {
             currentScreen = StandaloneScreen.TITLE

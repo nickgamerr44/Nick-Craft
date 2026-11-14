@@ -106,36 +106,6 @@ object WorldGenerator {
       }
     }
 
-    // 3. Spawn Initial Mobs (Pigs and Zombies)
-    world.mobs.clear()
-    // Spawn 4 pigs
-    for (i in 0 until 4) {
-      val mx = rng.nextInt(6, world.width - 6).toFloat()
-      val mz = rng.nextInt(6, world.length - 6).toFloat()
-      var my = 15f
-      for (y in 25 downTo 5) {
-        if (world.getBlock(mx.toInt(), y, mz.toInt()).isSolid) {
-          my = (y + 1).toFloat()
-          break
-        }
-      }
-      world.mobs.add(Mob(MobType.PIG, mx, my, mz))
-    }
-
-    // Spawn 2 initial zombies in shaded areas
-    for (i in 0 until 2) {
-      val mx = rng.nextInt(6, world.width - 6).toFloat()
-      val mz = rng.nextInt(6, world.length - 6).toFloat()
-      var my = 12f
-      for (y in 20 downTo 4) {
-        if (world.getBlock(mx.toInt(), y, mz.toInt()).isSolid) {
-          my = (y + 1).toFloat()
-          break
-        }
-      }
-      world.mobs.add(Mob(MobType.ZOMBIE, mx, my, mz))
-    }
-
     world.isDirty = true
   }
 

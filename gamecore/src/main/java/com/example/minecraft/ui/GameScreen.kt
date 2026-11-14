@@ -61,7 +61,6 @@ import com.example.minecraft.model.VoxelWorld
 import com.example.minecraft.model.WorldGenerator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlin.math.sqrt
 
 @SuppressLint("ClickableViewAccessibility")
 @Composable
@@ -69,7 +68,7 @@ fun GameScreen(
   worldInfo: WorldInfo,
   storage: WorldStorage,
   onExitToTitle: () -> Unit,
-  versionTag: String = "0.01"
+  versionTag: String = "0.02"
 ) {
   val context = LocalContext.current
 
@@ -145,62 +144,40 @@ fun GameScreen(
   val handleTapInteraction: () -> Unit = {
     player.triggerSwing()
 
-    // 1. Check if aiming at a mob to attack
-    var hitMob = false
-    for (mob in world.mobs) {
-      val dist = sqrt((mob.x - player.x) * (mob.x - player.x) + (mob.y - player.y) * (mob.y - player.y) + (mob.z - player.z) * (mob.z - player.z))
-      if (dist < 3.2f && !mob.isDead) {
-        val heldTier = player.inventory.selectedItem?.item?.toolTier ?: com.example.minecraft.model.ToolTier.NONE
-        val dmg = heldTier.attackDamage * 2.5f + 2f
-        val killed = mob.takeDamage(dmg)
-        AudioEngine.playDing()
-        if (killed) {
-          player.inventory.addItem(mob.type.dropItem, mob.type.dropCount)
-          AudioEngine.playPop()
-          inventoryVersion++
-        }
-        hitMob = true
-        break
-      }
-    }
+    val hit = renderer.currentTargetHit
+    if (hit != null) {
+      if (hit.block == BlockType.CRAFTING_TABLE) {
+        hasCraftingTableOpen = true
+        showInventory = true
+      } else if (hit.block == BlockType.TNT) {
+        world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
+        AudioEngine.playExplosion()
+      } else {
+        // Place held block on tapped ground / block face
+        val selected = player.inventory.selectedItem
+        val blockToPlace = selected?.item?.blockType
+        if (blockToPlace != null && blockToPlace != BlockType.AIR) {
+          val px = hit.blockX + hit.normalX
+          val py = hit.blockY + hit.normalY
+          val pz = hit.blockZ + hit.normalZ
 
-    // 2. If no mob hit, interact with targeted block
-    if (!hitMob) {
-      val hit = renderer.currentTargetHit
-      if (hit != null) {
-        if (hit.block == BlockType.CRAFTING_TABLE) {
-          hasCraftingTableOpen = true
-          showInventory = true
-        } else if (hit.block == BlockType.TNT) {
-          world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
-          AudioEngine.playExplosion()
-        } else {
-          // Place held block on tapped ground / block face
-          val selected = player.inventory.selectedItem
-          val blockToPlace = selected?.item?.blockType
-          if (blockToPlace != null && blockToPlace != BlockType.AIR) {
-            val px = hit.blockX + hit.normalX
-            val py = hit.blockY + hit.normalY
-            val pz = hit.blockZ + hit.normalZ
+          val playerMinX = player.x - player.halfW
+          val playerMaxX = player.x + player.halfW
+          val playerMinY = player.y
+          val playerMaxY = player.y + player.height
+          val playerMinZ = player.z - player.halfW
+          val playerMaxZ = player.z + player.halfW
 
-            val playerMinX = player.x - player.halfW
-            val playerMaxX = player.x + player.halfW
-            val playerMinY = player.y
-            val playerMaxY = player.y + player.height
-            val playerMinZ = player.z - player.halfW
-            val playerMaxZ = player.z + player.halfW
+          val collides = (px + 1 > playerMinX && px < playerMaxX) &&
+              (py + 1 > playerMinY && py < playerMaxY) &&
+              (pz + 1 > playerMinZ && pz < playerMaxZ)
 
-            val collides = (px + 1 > playerMinX && px < playerMaxX) &&
-                (py + 1 > playerMinY && py < playerMaxY) &&
-                (pz + 1 > playerMinZ && pz < playerMaxZ)
-
-            if (!collides) {
-              world.setBlock(px, py, pz, blockToPlace)
-              AudioEngine.playPlace()
-              if (player.gameMode == GameMode.SURVIVAL) {
-                player.inventory.consumeSelectedItem()
-                inventoryVersion++
-              }
+          if (!collides) {
+            world.setBlock(px, py, pz, blockToPlace)
+            AudioEngine.playPlace()
+            if (player.gameMode == GameMode.SURVIVAL) {
+              player.inventory.consumeSelectedItem()
+              inventoryVersion++
             }
           }
         }
@@ -223,18 +200,6 @@ fun GameScreen(
           if (stepSoundTimer > 18) {
             AudioEngine.playStep()
             stepSoundTimer = 0
-          }
-        }
-
-        // Update mobs
-        for (mob in world.mobs) {
-          mob.update(world, player.x, player.y, player.z)
-          if (mob.type.isHostile && !mob.isDead && player.gameMode == GameMode.SURVIVAL) {
-            val dist = sqrt((mob.x - player.x) * (mob.x - player.x) + (mob.y - player.y) * (mob.y - player.y) + (mob.z - player.z) * (mob.z - player.z))
-            if (dist < 1.2f && player.hurtTime <= 0) {
-              player.takeDamage(3f)
-              AudioEngine.playHurt()
-            }
           }
         }
 

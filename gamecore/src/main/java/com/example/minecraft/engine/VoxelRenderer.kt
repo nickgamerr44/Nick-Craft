@@ -7,8 +7,6 @@ import android.opengl.Matrix
 import com.example.minecraft.model.BlockFace
 import com.example.minecraft.model.BlockType
 import com.example.minecraft.model.CameraMode
-import com.example.minecraft.model.Mob
-import com.example.minecraft.model.MobType
 import com.example.minecraft.model.Particle
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.RaycastHit
@@ -59,7 +57,6 @@ class VoxelRenderer(
   private var chunkVertexCount: Int = 0
 
   private var wireframeBuffer: FloatBuffer? = null
-  private var mobCubeBuffer: FloatBuffer? = null
   private val boxFloatArray = FloatArray(36 * 6)
   private val boxFloatBuffer: FloatBuffer = ByteBuffer
     .allocateDirect(36 * 6 * 4)
@@ -78,7 +75,6 @@ class VoxelRenderer(
     TextureAtlas.init()
     initShaders()
     initWireframeCube()
-    initMobCube()
 
     rebuildWorldMesh()
   }
@@ -216,10 +212,7 @@ class VoxelRenderer(
       GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, chunkVertexCount)
     }
 
-    // 5. Render Mobs
-    renderMobs(sunlight, fogR, fogG, fogB)
-
-    // 6. Render Particles
+    // 5. Render Particles
     renderParticles(sunlight, fogR, fogG, fogB)
 
     // 7. Render Block Breaking Crack
@@ -456,28 +449,6 @@ class VoxelRenderer(
     addVertex(list, fx, fy, fz + 1f, u1, v1, shade)
     addVertex(list, fx + 1f, fy + 1f, fz, u0, v0, shade)
     addVertex(list, fx, fy + 1f, fz + 1f, u1, v0, shade)
-  }
-
-  private fun renderMobs(sunlight: Float, fogR: Float, fogG: Float, fogB: Float) {
-    GLES20.glUseProgram(programId)
-    for (mob in world.mobs) {
-      if (mob.isDead) continue
-
-      Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, mob.x, mob.y + 0.35f, mob.z)
-      Matrix.rotateM(modelMatrix, 0, mob.yaw, 0f, 1f, 0f)
-
-      Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
-      Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
-
-      if (mob.type == MobType.PIG) {
-        // Pig Head (front face 27) + Body
-        drawTexturedBox(mvpMatrix, 0.28f, 0.28f, 0.28f, 27, 27, 27, 27, 27, 27)
-      } else {
-        // Zombie Head (28) + Torso (30) + Legs (33)
-        drawTexturedBox(mvpMatrix, 0.25f, 0.55f, 0.25f, 28, 33, 28, 30, 30, 30)
-      }
-    }
   }
 
   private fun renderStevePlayer(sunlight: Float) {
@@ -805,67 +776,6 @@ class VoxelRenderer(
     wireframeBuffer = bb.asFloatBuffer().apply {
       put(lines)
       position(0)
-    }
-  }
-
-  private fun initMobCube() {
-    val list = ArrayList<Float>(36 * 6)
-    // Unit cube centered at origin from -0.35 to +0.35
-    val s = 0.35f
-    // Top
-    addCubeFace(list, -s, s, -s, s, s, s, 0f, 1f, 0f, 1.0f)
-    // Bottom
-    addCubeFace(list, -s, -s, s, s, -s, -s, 0f, -1f, 0f, 0.5f)
-    // North
-    addCubeFace(list, s, -s, -s, -s, s, -s, 0f, 0f, -1f, 0.8f)
-    // South
-    addCubeFace(list, -s, -s, s, s, s, s, 0f, 0f, 1f, 0.8f)
-    // West
-    addCubeFace(list, -s, -s, -s, -s, s, s, -1f, 0f, 0f, 0.65f)
-    // East
-    addCubeFace(list, s, -s, s, s, s, -s, 1f, 0f, 0f, 0.65f)
-
-    val arr = FloatArray(list.size)
-    for (i in list.indices) arr[i] = list[i]
-    val bb = ByteBuffer.allocateDirect(arr.size * 4).order(ByteOrder.nativeOrder())
-    mobCubeBuffer = bb.asFloatBuffer().apply {
-      put(arr)
-      position(0)
-    }
-  }
-
-  private fun addCubeFace(
-    list: ArrayList<Float>,
-    x0: Float, y0: Float, z0: Float,
-    x1: Float, y1: Float, z1: Float,
-    nx: Float, ny: Float, nz: Float,
-    shade: Float
-  ) {
-    val u0 = 0f; val v0 = 0f; val u1 = 1f; val v1 = 1f
-    if (ny != 0f) {
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
-      list.add(x0); list.add(y0); list.add(z1); list.add(u0); list.add(v1); list.add(shade)
-      list.add(x1); list.add(y0); list.add(z1); list.add(u1); list.add(v1); list.add(shade)
-
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
-      list.add(x1); list.add(y0); list.add(z1); list.add(u1); list.add(v1); list.add(shade)
-      list.add(x1); list.add(y0); list.add(z0); list.add(u1); list.add(v0); list.add(shade)
-    } else if (nz != 0f) {
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v1); list.add(shade)
-      list.add(x1); list.add(y0); list.add(z0); list.add(u1); list.add(v1); list.add(shade)
-      list.add(x1); list.add(y1); list.add(z0); list.add(u1); list.add(v0); list.add(shade)
-
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v1); list.add(shade)
-      list.add(x1); list.add(y1); list.add(z0); list.add(u1); list.add(v0); list.add(shade)
-      list.add(x0); list.add(y1); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
-    } else {
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v1); list.add(shade)
-      list.add(x0); list.add(y0); list.add(z1); list.add(u1); list.add(v1); list.add(shade)
-      list.add(x0); list.add(y1); list.add(z1); list.add(u1); list.add(v0); list.add(shade)
-
-      list.add(x0); list.add(y0); list.add(z0); list.add(u0); list.add(v1); list.add(shade)
-      list.add(x0); list.add(y1); list.add(z1); list.add(u1); list.add(v0); list.add(shade)
-      list.add(x0); list.add(y1); list.add(z0); list.add(u0); list.add(v0); list.add(shade)
     }
   }
 

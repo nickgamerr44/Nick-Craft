@@ -455,4 +455,45 @@ class ExampleUnitTest {
     assertEquals("0.00", result.news[1].versionTag)
     assertFalse(result.news[1].isLatest)
   }
+
+  @Test
+  fun testPlayerStrafeLeftAndRightMatchCameraDirections() {
+    val world = VoxelWorld(32, 16, 32)
+    for (x in 0 until 32) {
+      for (z in 0 until 32) {
+        world.setBlock(x, 4, z, BlockType.STONE)
+      }
+    }
+
+    // Looking at yaw=0 -> forward is (0, 0, +1); screen RIGHT is (-1, 0, 0), screen LEFT is (+1, 0, 0)
+    val playerRight = Player(16.5f, 5.0f, 16.5f).apply {
+      isOnGround = true
+      yaw = 0f
+    }
+    repeat(5) {
+      playerRight.update(world, moveForward = 0f, moveStrafe = 1f, jumpHeld = false, descendHeld = false)
+    }
+    assertTrue("Pressing right at yaw=0 must move toward -X (screen right)", playerRight.x < 16.5f)
+    assertEquals(16.5f, playerRight.z, 0.001f)
+
+    val playerLeft = Player(16.5f, 5.0f, 16.5f).apply {
+      isOnGround = true
+      yaw = 0f
+    }
+    repeat(5) {
+      playerLeft.update(world, moveForward = 0f, moveStrafe = -1f, jumpHeld = false, descendHeld = false)
+    }
+    assertTrue("Pressing left at yaw=0 must move toward +X (screen left)", playerLeft.x > 16.5f)
+    assertEquals(16.5f, playerLeft.z, 0.001f)
+
+    // Looking at yaw=90 -> forward is (-1, 0, 0); screen RIGHT is (0, 0, -1), screen LEFT is (0, 0, +1)
+    val rotatedRight = Player(16.5f, 5.0f, 16.5f).apply {
+      isOnGround = true
+      yaw = 90f
+    }
+    repeat(5) {
+      rotatedRight.update(world, moveForward = 0f, moveStrafe = 1f, jumpHeld = false, descendHeld = false)
+    }
+    assertTrue("Pressing right at yaw=90 must move toward -Z", rotatedRight.z < 16.5f)
+  }
 }
