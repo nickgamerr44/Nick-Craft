@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -78,7 +80,10 @@ fun ClassicShadowText(
   shadowColor: Color = BedrockColors.TextShadow,
   fontSize: Int = 14,
   fontWeight: FontWeight = FontWeight.Bold,
-  textAlign: TextAlign = TextAlign.Start
+  textAlign: TextAlign = TextAlign.Start,
+  maxLines: Int = Int.MAX_VALUE,
+  softWrap: Boolean = true,
+  overflow: TextOverflow = TextOverflow.Clip
 ) {
   Box(modifier = modifier) {
     Text(
@@ -88,6 +93,9 @@ fun ClassicShadowText(
       fontWeight = fontWeight,
       fontFamily = FontFamily.Monospace,
       textAlign = textAlign,
+      maxLines = maxLines,
+      softWrap = softWrap,
+      overflow = overflow,
       modifier = Modifier.offset(x = 1.5.dp, y = 1.5.dp)
     )
     Text(
@@ -96,7 +104,10 @@ fun ClassicShadowText(
       fontSize = fontSize.sp,
       fontWeight = fontWeight,
       fontFamily = FontFamily.Monospace,
-      textAlign = textAlign
+      textAlign = textAlign,
+      maxLines = maxLines,
+      softWrap = softWrap,
+      overflow = overflow
     )
   }
 }
@@ -108,7 +119,8 @@ fun BedrockButton(
   modifier: Modifier = Modifier,
   isGreen: Boolean = false,
   enabled: Boolean = true,
-  fontSize: Int = 13
+  fontSize: Int = 13,
+  singleLine: Boolean = false
 ) {
   val interactionSource = remember { MutableInteractionSource() }
 
@@ -125,6 +137,7 @@ fun BedrockButton(
   // Classic Minecraft 0.0.0 double-beveled stone button style
   Box(
     modifier = modifier
+      .minimumInteractiveComponentSize()
       .shadow(2.dp, RoundedCornerShape(2.dp))
       .border(BorderStroke(2.dp, borderColor), RoundedCornerShape(2.dp))
       .background(gradient, RoundedCornerShape(2.dp))
@@ -142,7 +155,10 @@ fun BedrockButton(
       color = if (enabled) BedrockColors.TextWhite else BedrockColors.TextGray,
       shadowColor = if (enabled) Color(0xFF202020) else Color(0xFF151515),
       fontSize = fontSize,
-      textAlign = TextAlign.Center
+      textAlign = TextAlign.Center,
+      maxLines = if (singleLine) 1 else Int.MAX_VALUE,
+      softWrap = !singleLine,
+      overflow = if (singleLine) TextOverflow.Ellipsis else TextOverflow.Clip
     )
   }
 }
