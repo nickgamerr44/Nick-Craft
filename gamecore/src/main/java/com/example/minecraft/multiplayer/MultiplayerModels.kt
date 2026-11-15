@@ -21,7 +21,10 @@ data class RemotePlayerState(
   val pitch: Float,
   val slotIndex: Int = 0,
   val health: Float = 20f,
-  val isDead: Boolean = false
+  val isDead: Boolean = false,
+  val isWalking: Boolean = false,
+  val swingSeq: Int = 0,
+  val heldBlockId: Int = 0
 )
 
 data class PlayerHitEvent(

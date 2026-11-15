@@ -41,8 +41,10 @@ class Player(
   var hurtTime: Int = 0
 
   var swingProgress: Float = 0f
+  var swingSeq: Int = 0
   var walkBobbing: Float = 0f
   var limbSwingWeight: Float = 0f
+  val isWalking: Boolean get() = limbSwingWeight > 0.08f
   var cameraMode: CameraMode = CameraMode.FIRST_PERSON
   var isThirdPerson: Boolean
     get() = (cameraMode != CameraMode.FIRST_PERSON)
@@ -69,6 +71,7 @@ class Player(
   fun triggerSwing() {
     if (swingProgress <= 0f) {
       swingProgress = 1.0f
+      swingSeq++
     }
   }
 

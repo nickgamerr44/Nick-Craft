@@ -42,6 +42,7 @@ interface MultiplayerGateway {
     player: Player
   ): Result<WorldInfo>
 
+  fun updatePoseSyncIntervalMs(intervalMs: Long) {}
   fun publishLocalPlayerState(player: Player, forceImmediate: Boolean = false)
   fun publishBlockEdit(x: Int, y: Int, z: Int, blockType: BlockType)
   fun publishPlayerHit(targetPlayerId: String, damage: Float)

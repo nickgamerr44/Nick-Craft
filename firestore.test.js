@@ -153,20 +153,40 @@ test('server members can record PvP player_hits and update own health/death/resp
     })
   );
 
-  // p2 reads player_hits and updates own health to 0 (dead) then respawns to 20
+  // p2 reads player_hits and updates own health to 0 (dead), then respawns with animation fields
   await assertSucceeds(
     p2Db.collection('world_servers').doc('NC4829').collection('player_hits').get()
   );
   await assertSucceeds(
     p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
       uid: 'p2', displayName: 'Jogador2', x: 25.0, y: 12.0, z: 25.0, yaw: 0.0, pitch: 0.0,
-      slotIndex: 1, health: 0.0, isDead: true, updatedAt: tsNow()
+      slotIndex: 1, health: 0.0, isDead: true, isWalking: false, swingSeq: 3, heldBlockId: 0, updatedAt: tsNow()
     })
   );
   await assertSucceeds(
     p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
       uid: 'p2', displayName: 'Jogador2', x: 24.5, y: 14.0, z: 24.5, yaw: 0.0, pitch: 0.0,
-      slotIndex: 1, health: 20.0, isDead: false, updatedAt: tsNow()
+      slotIndex: 1, health: 20.0, isDead: false, isWalking: true, swingSeq: 4, heldBlockId: 5, updatedAt: tsNow()
+    })
+  );
+
+  // Reject negative swingSeq, non-boolean isWalking, and invalid heldBlockId
+  await assertFails(
+    p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+      uid: 'p2', displayName: 'Jogador2', x: 24.5, y: 14.0, z: 24.5, yaw: 0.0, pitch: 0.0,
+      slotIndex: 1, isWalking: true, swingSeq: -1, heldBlockId: 5, updatedAt: tsNow()
+    })
+  );
+  await assertFails(
+    p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+      uid: 'p2', displayName: 'Jogador2', x: 24.5, y: 14.0, z: 24.5, yaw: 0.0, pitch: 0.0,
+      slotIndex: 1, isWalking: 'yes', swingSeq: 4, heldBlockId: 5, updatedAt: tsNow()
+    })
+  );
+  await assertFails(
+    p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+      uid: 'p2', displayName: 'Jogador2', x: 24.5, y: 14.0, z: 24.5, yaw: 0.0, pitch: 0.0,
+      slotIndex: 1, isWalking: true, swingSeq: 4, heldBlockId: 999, updatedAt: tsNow()
     })
   );
 

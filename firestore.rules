@@ -121,7 +121,7 @@ service cloud.firestore {
           request.auth.uid == playerUid &&
           isServerMember(serverId) &&
           request.resource.data.keys().hasAll(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt']) &&
-          request.resource.data.keys().hasOnly(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt', 'health', 'isDead']) &&
+          request.resource.data.keys().hasOnly(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt', 'health', 'isDead', 'isWalking', 'swingSeq', 'heldBlockId']) &&
           request.resource.data.uid == request.auth.uid &&
           request.resource.data.displayName is string &&
           request.resource.data.displayName.size() >= 1 &&
@@ -136,6 +136,9 @@ service cloud.firestore {
           request.resource.data.slotIndex < 5 &&
           (!('health' in request.resource.data) || (request.resource.data.health is number && request.resource.data.health >= 0 && request.resource.data.health <= 20)) &&
           (!('isDead' in request.resource.data) || request.resource.data.isDead is bool) &&
+          (!('isWalking' in request.resource.data) || request.resource.data.isWalking is bool) &&
+          (!('swingSeq' in request.resource.data) || (request.resource.data.swingSeq is int && request.resource.data.swingSeq >= 0)) &&
+          (!('heldBlockId' in request.resource.data) || (request.resource.data.heldBlockId is int && request.resource.data.heldBlockId >= 0 && request.resource.data.heldBlockId <= 127)) &&
           request.resource.data.updatedAt is timestamp &&
           request.resource.data.updatedAt <= request.time;
 

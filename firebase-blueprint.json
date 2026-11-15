@@ -33,6 +33,9 @@
             "slotIndex": { "type": "number" },
             "health": { "type": "number" },
             "isDead": { "type": "boolean" },
+            "isWalking": { "type": "boolean" },
+            "swingSeq": { "type": "number" },
+            "heldBlockId": { "type": "number" },
             "updatedAt": { "type": "timestamp" }
           }
         },

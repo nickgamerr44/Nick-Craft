@@ -727,4 +727,91 @@ class ExampleUnitTest {
       tempDir.deleteRecursively()
     }
   }
+
+  @Test
+  fun testRemotePlayerAnimatorWalkSwingAndStop() {
+    val animator = com.example.minecraft.model.RemotePlayerAnimator()
+    var peer = com.example.minecraft.multiplayer.RemotePlayerState(
+      playerId = "p2",
+      displayName = "Amigo",
+      x = 10f,
+      y = 12f,
+      z = 10f,
+      yaw = 0f,
+      pitch = 0f,
+      isWalking = true,
+      swingSeq = 0
+    )
+
+    var maxAbsLegSwing = 0f
+    var maxAbsArmSwing = 0f
+    repeat(10) { idx ->
+      peer = peer.copy(x = 10f + idx * 0.08f, isWalking = true)
+      val poses = animator.step(listOf(peer), animationsEnabled = true, walkSwingDegrees = 30f, attackSwingDegrees = 70f)
+      assertEquals(1, poses.size)
+      maxAbsLegSwing = maxOf(maxAbsLegSwing, kotlin.math.abs(poses[0].legSwingDeg))
+      maxAbsArmSwing = maxOf(maxAbsArmSwing, kotlin.math.abs(poses[0].armSwingDeg))
+    }
+    assertTrue("Expected walking leg swing > 5 deg, got $maxAbsLegSwing", maxAbsLegSwing > 5f)
+    assertTrue("Expected walking arm swing > 5 deg, got $maxAbsArmSwing", maxAbsArmSwing > 5f)
+
+    // Stop walking and settle position -> limbs must decay back to 0 idle
+    peer = peer.copy(isWalking = false)
+    var settledPose = animator.step(listOf(peer)).first()
+    repeat(40) {
+      settledPose = animator.step(listOf(peer)).first()
+    }
+    assertEquals(0f, settledPose.legSwingDeg, 0.01f)
+    assertEquals(0f, settledPose.armSwingDeg, 0.01f)
+  }
+
+  @Test
+  fun testRemotePlayerAnimatorAttackSwingTriggerAndDecay() {
+    val animator = com.example.minecraft.model.RemotePlayerAnimator()
+    val idlePeer = com.example.minecraft.multiplayer.RemotePlayerState(
+      playerId = "p2",
+      displayName = "Amigo",
+      x = 12f,
+      y = 12f,
+      z = 12f,
+      yaw = 0f,
+      pitch = 0f,
+      swingSeq = 1
+    )
+    val initialPose = animator.step(listOf(idlePeer), animationsEnabled = true, walkSwingDegrees = 30f, attackSwingDegrees = 70f).first()
+    assertEquals(0f, initialPose.attackSwingDeg, 0.001f)
+
+    // Peer swings arm (swingSeq advances 1 -> 2)
+    val swingingPeer = idlePeer.copy(swingSeq = 2)
+    var peakAttackSwing = 0f
+    repeat(15) {
+      val pose = animator.step(listOf(swingingPeer), animationsEnabled = true, walkSwingDegrees = 30f, attackSwingDegrees = 70f).first()
+      peakAttackSwing = maxOf(peakAttackSwing, pose.attackSwingDeg)
+    }
+    assertTrue("Expected attack swing > 40 deg, got $peakAttackSwing", peakAttackSwing > 40f)
+
+    val endPose = animator.step(listOf(swingingPeer), animationsEnabled = true, walkSwingDegrees = 30f, attackSwingDegrees = 70f).first()
+    assertEquals(0f, endPose.attackSwingDeg, 0.01f)
+  }
+
+  @Test
+  fun testLiveGameConfigParserParsesAnimationPatch2() {
+    val raw = """
+      {
+        "configVersion": 2,
+        "livePatchTitle": "Animações Multiplayer & Combate",
+        "announcement": "Animações de andar e bater para outros jogadores ativadas!",
+        "remoteAnimationsEnabled": true,
+        "remoteWalkSwingDegrees": 34.5,
+        "remoteAttackSwingDegrees": 75.0,
+        "remotePoseSyncIntervalMs": 95
+      }
+    """.trimIndent()
+    val parsed = com.example.minecraft.data.LiveGameConfigParser.parse(raw)!!
+    assertEquals(2, parsed.configVersion)
+    assertTrue(parsed.remoteAnimationsEnabled)
+    assertEquals(34.5f, parsed.remoteWalkSwingDegrees, 0.001f)
+    assertEquals(75.0f, parsed.remoteAttackSwingDegrees, 0.001f)
+    assertEquals(95L, parsed.remotePoseSyncIntervalMs)
+  }
 }

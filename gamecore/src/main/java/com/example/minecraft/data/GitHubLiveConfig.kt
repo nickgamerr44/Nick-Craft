@@ -24,7 +24,11 @@ data class LiveGameConfig(
   val spawnX: Float = 24.5f,
   val spawnZ: Float = 24.5f,
   val respawnHealth: Float = 20.0f,
-  val timeSpeedMultiplier: Float = 1.0f
+  val timeSpeedMultiplier: Float = 1.0f,
+  val remoteAnimationsEnabled: Boolean = true,
+  val remoteWalkSwingDegrees: Float = 30.0f,
+  val remoteAttackSwingDegrees: Float = 70.0f,
+  val remotePoseSyncIntervalMs: Long = 120L
 ) {
   companion object {
     val DEFAULT = LiveGameConfig()
@@ -37,6 +41,7 @@ object LiveGameConfigParser {
       val map = parseJsonObject(jsonText) ?: return null
       fun str(key: String): String = (map[key] as? String)?.trim() ?: ""
       fun intVal(key: String, def: Int): Int = (map[key] as? Number)?.toInt() ?: def
+      fun longVal(key: String, def: Long): Long = (map[key] as? Number)?.toLong() ?: def
       fun floatVal(key: String, def: Float): Float = (map[key] as? Number)?.toFloat() ?: def
       fun boolVal(key: String, def: Boolean): Boolean = (map[key] as? Boolean) ?: def
 
@@ -55,7 +60,11 @@ object LiveGameConfigParser {
         spawnX = floatVal("spawnX", 24.5f).coerceIn(2f, 46f),
         spawnZ = floatVal("spawnZ", 24.5f).coerceIn(2f, 46f),
         respawnHealth = floatVal("respawnHealth", 20.0f).coerceIn(2f, 20f),
-        timeSpeedMultiplier = floatVal("timeSpeedMultiplier", 1.0f).coerceIn(0f, 10f)
+        timeSpeedMultiplier = floatVal("timeSpeedMultiplier", 1.0f).coerceIn(0f, 10f),
+        remoteAnimationsEnabled = boolVal("remoteAnimationsEnabled", true),
+        remoteWalkSwingDegrees = floatVal("remoteWalkSwingDegrees", 30.0f).coerceIn(0f, 65f),
+        remoteAttackSwingDegrees = floatVal("remoteAttackSwingDegrees", 70.0f).coerceIn(0f, 110f),
+        remotePoseSyncIntervalMs = longVal("remotePoseSyncIntervalMs", 120L).coerceIn(60L, 500L)
       )
     }.getOrNull()
   }
@@ -76,7 +85,11 @@ object LiveGameConfigParser {
     appendLine("""  "spawnX": ${config.spawnX},""")
     appendLine("""  "spawnZ": ${config.spawnZ},""")
     appendLine("""  "respawnHealth": ${config.respawnHealth},""")
-    appendLine("""  "timeSpeedMultiplier": ${config.timeSpeedMultiplier}""")
+    appendLine("""  "timeSpeedMultiplier": ${config.timeSpeedMultiplier},""")
+    appendLine("""  "remoteAnimationsEnabled": ${config.remoteAnimationsEnabled},""")
+    appendLine("""  "remoteWalkSwingDegrees": ${config.remoteWalkSwingDegrees},""")
+    appendLine("""  "remoteAttackSwingDegrees": ${config.remoteAttackSwingDegrees},""")
+    appendLine("""  "remotePoseSyncIntervalMs": ${config.remotePoseSyncIntervalMs}""")
     append("}")
   }
 

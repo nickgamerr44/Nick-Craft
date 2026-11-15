@@ -142,12 +142,16 @@ fun GameScreen(
   // 2. Renderer instance
   val renderer = remember(world, player) { VoxelRenderer(context, world, player) }
 
-  // Sync remote players and live time speed into OpenGL renderer
+  // Sync remote players and live config parameters into OpenGL renderer & multiplayer gateway
   LaunchedEffect(mpState.remotePlayers, versionProfile.enableMultiplayer) {
     renderer.remotePlayers = if (versionProfile.enableMultiplayer) mpState.remotePlayers else emptyList()
   }
-  LaunchedEffect(liveConfig.timeSpeedMultiplier) {
+  LaunchedEffect(liveConfig, multiplayerGateway) {
     renderer.timeSpeedMultiplier = liveConfig.timeSpeedMultiplier
+    renderer.remoteAnimationsEnabled = liveConfig.remoteAnimationsEnabled
+    renderer.remoteWalkSwingDegrees = liveConfig.remoteWalkSwingDegrees
+    renderer.remoteAttackSwingDegrees = liveConfig.remoteAttackSwingDegrees
+    multiplayerGateway?.updatePoseSyncIntervalMs(liveConfig.remotePoseSyncIntervalMs)
   }
 
   // 3. UI & Combat States
@@ -240,7 +244,11 @@ fun GameScreen(
   // Helper to attack remote players, place block, or interact on tap
   val handleTapInteraction: () -> Unit = {
     if (!isPlayerDead) {
+      val prevSwingSeq = player.swingSeq
       player.triggerSwing()
+      if (versionProfile.enableMultiplayer && player.swingSeq != prevSwingSeq) {
+        multiplayerGateway?.publishLocalPlayerState(player, forceImmediate = true)
+      }
 
       val remoteHit = targetedRemotePlayer
       val blockHit = renderer.currentTargetHit
@@ -311,6 +319,7 @@ fun GameScreen(
   LaunchedEffect(worldInfo.id) {
     var digSoundTimer = 0
     var stepSoundTimer = 0
+    var wasMoving = false
 
     while (isActive) {
       if (damageFlashAlpha > 0f) {
@@ -340,8 +349,10 @@ fun GameScreen(
         }
 
         world.updateParticles()
+        val movementEdge = (wasMoving != isMoving)
+        wasMoving = isMoving
         if (versionProfile.enableMultiplayer) {
-          multiplayerGateway?.publishLocalPlayerState(player)
+          multiplayerGateway?.publishLocalPlayerState(player, forceImmediate = movementEdge)
         }
 
         if (player.isOnGround && isMoving) {
@@ -385,7 +396,11 @@ fun GameScreen(
         val isHoldingLongEnough = isTouchHolding && (now - touchDownTime > 200L) && (touchDragAccumX * touchDragAccumX + touchDragAccumY * touchDragAccumY < 3600f)
 
         if (isHoldingLongEnough && hit != null) {
+          val prevDigSwingSeq = player.swingSeq
           player.triggerSwing()
+          if (versionProfile.enableMultiplayer && player.swingSeq != prevDigSwingSeq) {
+            multiplayerGateway?.publishLocalPlayerState(player, forceImmediate = true)
+          }
           digSoundTimer++
           if (digSoundTimer % 4 == 0) {
             AudioEngine.playDig(hit.block)

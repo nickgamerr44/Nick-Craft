@@ -172,7 +172,7 @@ class MultiplayerServerRuleTest : FirestoreEmulatorTestBase() {
       ).await()
     }
 
-    // Member2 updates own health to 0 (dead) then respawns at spawn with health=20
+    // Member2 updates own health to 0 (dead), respawns with animation fields, and invalid swingSeq fails
     signInTestUser(guestEmails[0])
     withTimeout(OP_TIMEOUT_MS) {
       serverRef.collection("players").document(member2Uid).set(
@@ -187,6 +187,9 @@ class MultiplayerServerRuleTest : FirestoreEmulatorTestBase() {
           "slotIndex" to 1,
           "health" to 0.0,
           "isDead" to true,
+          "isWalking" to false,
+          "swingSeq" to 2,
+          "heldBlockId" to 0,
           "updatedAt" to FieldValue.serverTimestamp()
         )
       ).await()
@@ -202,6 +205,27 @@ class MultiplayerServerRuleTest : FirestoreEmulatorTestBase() {
           "slotIndex" to 1,
           "health" to 20.0,
           "isDead" to false,
+          "isWalking" to true,
+          "swingSeq" to 3,
+          "heldBlockId" to 4,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+    }
+    assertPermissionDenied {
+      serverRef.collection("players").document(member2Uid).set(
+        mapOf(
+          "uid" to member2Uid,
+          "displayName" to "Jogador2",
+          "x" to 24.5,
+          "y" to 14.0,
+          "z" to 24.5,
+          "yaw" to 0.0,
+          "pitch" to 0.0,
+          "slotIndex" to 1,
+          "isWalking" to true,
+          "swingSeq" to -1,
+          "heldBlockId" to 4,
           "updatedAt" to FieldValue.serverTimestamp()
         )
       ).await()

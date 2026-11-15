@@ -1,8 +1,12 @@
 package com.example.minecraft.multiplayer
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
+import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.NoCredentialException
@@ -14,6 +18,7 @@ import com.example.minecraft.model.VoxelWorld
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
@@ -27,6 +32,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.ServerTimestamp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.lang.ref.WeakReference
 import kotlin.random.Random
 
@@ -68,6 +75,9 @@ data class PlayerPresenceDoc(
   val slotIndex: Int = 0,
   val health: Double = 20.0,
   val isDead: Boolean = false,
+  val isWalking: Boolean = false,
+  val swingSeq: Int = 0,
+  val heldBlockId: Int = 0,
   @ServerTimestamp val updatedAt: Timestamp? = null
 )
 
@@ -151,12 +161,19 @@ class FirestoreMultiplayerGateway(
   private var hostEditCounter: Int = 0
   private var mySlotIndex: Int = 0
   private var lastPosePublishMs: Long = 0L
+  @Volatile private var poseSyncIntervalMs: Long = 120L
   private var sessionJoinedAtMs: Long = 0L
   private val seenEditIds = HashSet<String>()
   private val seenHitIds = HashSet<String>()
 
   init {
     auth.addAuthStateListener(authListener)
+  }
+
+  private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
   }
 
   override suspend fun trySilentSignIn(context: Context): Boolean {
@@ -171,12 +188,18 @@ class FirestoreMultiplayerGateway(
       val request = GetCredentialRequest.Builder()
         .addCredentialOption(googleIdOption)
         .build()
-      val cm = CredentialManager.create(context)
-      val result = cm.getCredential(context, request)
-      val idToken = GoogleIdTokenCredential.createFrom(result.credential.data).idToken
-      val firebaseCred = GoogleAuthProvider.getCredential(idToken, null)
-      auth.signInWithCredential(firebaseCred).await()
-      true
+      val hostContext = context.findActivity() ?: context
+      val cm = CredentialManager.create(hostContext)
+      val result = cm.getCredential(hostContext, request)
+      val credential = result.credential
+      if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+        val idToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+        val firebaseCred = GoogleAuthProvider.getCredential(idToken, null)
+        auth.signInWithCredential(firebaseCred).await()
+        true
+      } else {
+        false
+      }
     } catch (_: NoCredentialException) {
       false
     } catch (_: Exception) {
@@ -195,20 +218,38 @@ class FirestoreMultiplayerGateway(
       val request = GetCredentialRequest.Builder()
         .addCredentialOption(signInOption)
         .build()
-      val cm = CredentialManager.create(activityContext)
-      val result = cm.getCredential(activityContext, request)
-      val googleCred = GoogleIdTokenCredential.createFrom(result.credential.data)
-      val firebaseCred = GoogleAuthProvider.getCredential(googleCred.idToken, null)
-      val authResult = auth.signInWithCredential(firebaseCred).await()
-      val user = authResult.user
-      val name = user?.displayName?.takeIf { it.isNotBlank() }
-        ?: user?.email?.substringBefore('@')
-        ?: "Jogador"
-      _currentUserUid.value = user?.uid
-      _currentUserName.value = name
-      Result.success(name)
+      val hostContext = activityContext.findActivity() ?: activityContext
+      val cm = CredentialManager.create(hostContext)
+      val result = cm.getCredential(hostContext, request)
+      val credential = result.credential
+      if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+        val googleCred = GoogleIdTokenCredential.createFrom(credential.data)
+        val firebaseCred = GoogleAuthProvider.getCredential(googleCred.idToken, null)
+        val authResult = auth.signInWithCredential(firebaseCred).await()
+        val user = authResult.user
+        val name = user?.displayName?.takeIf { it.isNotBlank() }
+          ?: user?.email?.substringBefore('@')
+          ?: "Jogador"
+        _currentUserUid.value = user?.uid
+        _currentUserName.value = name
+        _sessionState.update { it.copy(errorMessage = null) }
+        Result.success(name)
+      } else {
+        val err = IllegalStateException("Credencial Google inesperada")
+        _sessionState.update { it.copy(errorMessage = "Credencial Google inválida. Tente novamente.") }
+        Result.failure(err)
+      }
     } catch (e: GetCredentialCancellationException) {
-      Log.i("FirestoreMultiplayer", "Google sign-in cancelled by user", e)
+      Log.w("FirestoreMultiplayer", "Google sign-in cancelled or dismissed: ${e.message}", e)
+      _sessionState.update {
+        it.copy(errorMessage = "Login Google cancelado. Selecione uma conta Google para continuar.")
+      }
+      Result.failure(e)
+    } catch (e: NoCredentialException) {
+      Log.w("FirestoreMultiplayer", "No Google credentials available: ${e.message}", e)
+      _sessionState.update {
+        it.copy(errorMessage = "Nenhuma conta Google encontrada neste aparelho/emulador. Adicione uma conta Google nas Configurações do Android.")
+      }
       Result.failure(e)
     } catch (e: Exception) {
       Log.e("FirestoreMultiplayer", "Google sign-in failed", e)
@@ -222,7 +263,14 @@ class FirestoreMultiplayerGateway(
   override suspend fun signOut() {
     closeOrLeaveServer()
     _availableServers.value = emptyList()
-    auth.signOut()
+    withContext(NonCancellable) {
+      runCatching {
+        CredentialManager.create(appContext).clearCredentialState(ClearCredentialStateRequest())
+      }.onFailure {
+        Log.w("FirestoreMultiplayer", "Failed to clear credential state: ${it.message}")
+      }
+      auth.signOut()
+    }
   }
 
   override suspend fun refreshServers(): Result<Unit> {
@@ -461,7 +509,10 @@ class FirestoreMultiplayerGateway(
           pitch = p.pitch.toFloat(),
           slotIndex = p.slotIndex.coerceIn(0, MAX_MULTIPLAYER_PLAYERS - 1),
           health = p.health.toFloat().coerceIn(0f, 20f),
-          isDead = p.isDead || p.health <= 0.0
+          isDead = p.isDead || p.health <= 0.0,
+          isWalking = p.isWalking,
+          swingSeq = p.swingSeq.coerceAtLeast(0),
+          heldBlockId = p.heldBlockId.coerceIn(0, 127)
         )
       }
       val names = docs.mapNotNull { it.displayName.takeIf { n -> n.isNotBlank() } }.distinct()
@@ -526,13 +577,17 @@ class FirestoreMultiplayerGateway(
       }
   }
 
+  override fun updatePoseSyncIntervalMs(intervalMs: Long) {
+    poseSyncIntervalMs = intervalMs.coerceIn(60L, 500L)
+  }
+
   override fun publishLocalPlayerState(player: Player, forceImmediate: Boolean) {
     val state = _sessionState.value
     val user = auth.currentUser ?: return
     if (!state.isActive || state.serverId.isBlank()) return
 
     val now = System.currentTimeMillis()
-    if (!forceImmediate && now - lastPosePublishMs < 180L) return
+    if (!forceImmediate && now - lastPosePublishMs < poseSyncIntervalMs) return
     lastPosePublishMs = now
 
     val name = (_currentUserName.value ?: "Jogador").take(40)
@@ -550,6 +605,7 @@ class FirestoreMultiplayerGateway(
     player: Player,
     slotIndex: Int
   ) {
+    val heldBlockId = (player.inventory.selectedItem?.item?.blockType?.id?.toInt() ?: 0).coerceIn(0, 127)
     val payload = hashMapOf(
       "uid" to uid,
       "displayName" to displayName,
@@ -561,6 +617,9 @@ class FirestoreMultiplayerGateway(
       "slotIndex" to slotIndex.coerceIn(0, MAX_MULTIPLAYER_PLAYERS - 1),
       "health" to player.health.toDouble().coerceIn(0.0, 20.0),
       "isDead" to (player.health <= 0f),
+      "isWalking" to player.isWalking,
+      "swingSeq" to player.swingSeq.coerceAtLeast(0),
+      "heldBlockId" to heldBlockId,
       "updatedAt" to FieldValue.serverTimestamp()
     )
     db.collection("world_servers").document(serverId)

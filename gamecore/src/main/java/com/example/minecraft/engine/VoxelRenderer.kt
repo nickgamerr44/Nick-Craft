@@ -10,6 +10,7 @@ import com.example.minecraft.model.CameraMode
 import com.example.minecraft.model.Particle
 import com.example.minecraft.model.Player
 import com.example.minecraft.model.RaycastHit
+import com.example.minecraft.model.RemotePlayerAnimator
 import com.example.minecraft.model.VoxelWorld
 import com.example.minecraft.multiplayer.RemotePlayerState
 import java.nio.ByteBuffer
@@ -33,6 +34,10 @@ class VoxelRenderer(
   var timeSpeedMultiplier: Float = 1.0f
   var viewDistanceFog: Float = 32f
   @Volatile var remotePlayers: List<RemotePlayerState> = emptyList()
+  @Volatile var remoteAnimationsEnabled: Boolean = true
+  @Volatile var remoteWalkSwingDegrees: Float = 30.0f
+  @Volatile var remoteAttackSwingDegrees: Float = 70.0f
+  private val remoteAnimator = RemotePlayerAnimator()
   private val remoteFlashUntilMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
   private val lastRemoteHealth = java.util.concurrent.ConcurrentHashMap<String, Float>()
   private var screenAspect: Float = 1.777f
@@ -558,7 +563,17 @@ class VoxelRenderer(
 
   private fun renderRemotePlayers(sunlight: Float) {
     val peers = remotePlayers
-    if (peers.isEmpty()) return
+    if (peers.isEmpty()) {
+      remoteAnimator.clear()
+      return
+    }
+
+    val animatedPeers = remoteAnimator.step(
+      peers = peers,
+      animationsEnabled = remoteAnimationsEnabled,
+      walkSwingDegrees = remoteWalkSwingDegrees,
+      attackSwingDegrees = remoteAttackSwingDegrees
+    )
 
     GLES20.glUseProgram(programId)
     GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
@@ -567,7 +582,8 @@ class VoxelRenderer(
     GLES20.glUniform1f(uSunlightLoc, max(0.45f, sunlight))
 
     val now = System.currentTimeMillis()
-    for (rp in peers) {
+    for (pose in animatedPeers) {
+      val rp = pose.player
       val prevHp = lastRemoteHealth.put(rp.playerId, rp.health)
       if (prevHp != null && rp.health < prevHp) {
         remoteFlashUntilMs[rp.playerId] = now + 300L
@@ -577,62 +593,95 @@ class VoxelRenderer(
 
       val fallTilt = if (rp.isDead || rp.health <= 0f) 90f else 0f
       val bodyOffsetY = if (rp.isDead || rp.health <= 0f) -0.45f else 0f
+      val px = pose.renderX
+      val py = pose.renderY
+      val pz = pose.renderZ
+      val yaw = pose.renderYaw
+      val pitch = pose.renderPitch
+      val legSwing = pose.legSwingDeg
+      val armSwing = pose.armSwingDeg
+      val attackSwing = pose.attackSwingDeg
 
       // Head
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.48f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 1.48f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
-      Matrix.rotateM(modelMatrix, 0, rp.pitch, 1f, 0f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
+      Matrix.rotateM(modelMatrix, 0, pitch, 1f, 0f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.20f, 0.20f, 0.20f, 34, 38, 35, 29, 36, 36)
 
       // Torso
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.90f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 0.90f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.20f, 0.30f, 0.11f, 31, 31, 31, 30, 31, 31)
 
-      // Left Arm
+      // Left Arm (hinged at shoulder 1.15m)
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 1.15f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
-      Matrix.translateM(modelMatrix, 0, -0.28f, -0.26f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, -0.28f, 0f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -armSwing, 1f, 0f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0f, -0.26f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
 
-      // Right Arm
+      // Right Arm (hinged at shoulder 1.15m, walking swing + hit/mine attackSwing)
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 1.15f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
-      Matrix.translateM(modelMatrix, 0, 0.28f, -0.26f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0.28f, 0f, 0f)
+      Matrix.rotateM(modelMatrix, 0, armSwing - attackSwing, 1f, 0f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0f, -0.26f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.08f, 0.26f, 0.08f, 31, 38, 32, 32, 32, 32)
 
-      // Left Leg
+      // Held 3D block in remote player's right hand
+      val heldBlock = if (rp.heldBlockId > 0) BlockType.fromId(rp.heldBlockId.toByte()) else BlockType.AIR
+      if (heldBlock != BlockType.AIR) {
+        val itemMatrix = FloatArray(16)
+        System.arraycopy(modelMatrix, 0, itemMatrix, 0, 16)
+        Matrix.translateM(itemMatrix, 0, 0f, -0.20f, 0.16f)
+        Matrix.rotateM(itemMatrix, 0, 30f, 0f, 1f, 0f)
+        Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, itemMatrix, 0)
+        Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
+        drawTexturedBox(
+          mvpMatrix, 0.09f, 0.09f, 0.09f,
+          heldBlock.topTextureIndex, heldBlock.bottomTextureIndex,
+          heldBlock.sideTextureIndex, heldBlock.sideTextureIndex,
+          heldBlock.sideTextureIndex, heldBlock.sideTextureIndex
+        )
+      }
+
+      // Left Leg (hinged at hip 0.60m)
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 0.60f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, -0.10f, 0f, 0f)
+      Matrix.rotateM(modelMatrix, 0, legSwing, 1f, 0f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0f, -0.30f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)
 
-      // Right Leg
+      // Right Leg (hinged at hip 0.60m)
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f + bodyOffsetY, rp.z)
+      Matrix.translateM(modelMatrix, 0, px, py + 0.60f + bodyOffsetY, pz)
       if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
-      Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, 0.10f, 0f, 0f)
+      Matrix.rotateM(modelMatrix, 0, -legSwing, 1f, 0f, 0f)
+      Matrix.translateM(modelMatrix, 0, 0f, -0.30f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)

@@ -1,7 +1,7 @@
 {
-  "configVersion": 1,
-  "livePatchTitle": "PvP Multiplayer & Spawn ao Vivo",
-  "announcement": "",
+  "configVersion": 2,
+  "livePatchTitle": "Animações Multiplayer & Combate",
+  "announcement": "Animações de andar e bater para outros jogadores ativadas!",
   "motd": "Atualizações automáticas via GitHub sem precisar trocar a versão!",
   "pvpEnabled": true,
   "pvpDamagesCreative": true,
@@ -13,5 +13,9 @@
   "spawnX": 24.5,
   "spawnZ": 24.5,
   "respawnHealth": 20.0,
-  "timeSpeedMultiplier": 1.0
+  "timeSpeedMultiplier": 1.0,
+  "remoteAnimationsEnabled": true,
+  "remoteWalkSwingDegrees": 30.0,
+  "remoteAttackSwingDegrees": 70.0,
+  "remotePoseSyncIntervalMs": 120
 }

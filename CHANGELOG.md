@@ -6,8 +6,8 @@
 - Novo Multiplayer Online (funciona à distância entre redes diferentes): transforme qualquer mundo seu em servidor com código de acesso e limite de até 5 jogadores conectados ao mesmo tempo.
 - Combate PvP entre jogadores: bater em outro jogador causa dano com feedback visual/sonoro e exibe barra de vida.
 - Tela de Morte e Respawn: ao chegar a 0 de vida, surge a tela "Você morreu!" com botão "Renascer no Spawn" que restaura a vida no Spawn.
-- Atualização automática pelo GitHub (`live_config.json`) sem precisar trocar o número da versão.
-- Sincronização em tempo real dos jogadores em 3D e das construções/quebras de blocos.
+- Atualização automática pelo GitHub (`live_config.json`) sem precisar trocar o número da versão (inclui ajuste ao vivo das animações multiplayer).
+- Sincronização em tempo real dos jogadores em 3D (com animações de andar com braços/pernas, animação de bater/minerar com o braço direito e bloco na mão) e das construções/quebras de blocos.
 
 ## 0.02 - Correção de Controles e Remoção de Mobs (14/11/2026)
 
