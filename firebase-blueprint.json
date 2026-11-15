@@ -21,7 +21,7 @@
       "subcollections": [
         {
           "path": "players/{playerUid}",
-          "description": "Real-time position, rotation, and avatar slot of each connected player.",
+          "description": "Real-time position, rotation, health, death status, and avatar slot of each connected player.",
           "fields": {
             "uid": { "type": "string" },
             "displayName": { "type": "string" },
@@ -31,6 +31,8 @@
             "yaw": { "type": "number" },
             "pitch": { "type": "number" },
             "slotIndex": { "type": "number" },
+            "health": { "type": "number" },
+            "isDead": { "type": "boolean" },
             "updatedAt": { "type": "timestamp" }
           }
         },
@@ -43,6 +45,17 @@
             "z": { "type": "number" },
             "blockId": { "type": "number" },
             "authorUid": { "type": "string" },
+            "createdAt": { "type": "timestamp" }
+          }
+        },
+        {
+          "path": "player_hits/{hitId}",
+          "description": "Immutable PvP combat hit events sent from attacker to target player.",
+          "fields": {
+            "attackerUid": { "type": "string" },
+            "attackerName": { "type": "string" },
+            "targetUid": { "type": "string" },
+            "damage": { "type": "number" },
             "createdAt": { "type": "timestamp" }
           }
         }

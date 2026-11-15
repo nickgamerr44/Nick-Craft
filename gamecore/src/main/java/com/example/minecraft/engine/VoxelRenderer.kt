@@ -30,9 +30,16 @@ class VoxelRenderer(
   var currentTargetHit: RaycastHit? = null
   var breakProgress: Float = 0f
   var timeOfDay: Float = 6000f // 0..24000 (6000 = noon, 12000 = sunset, 18000 = midnight, 24000 = dawn)
+  var timeSpeedMultiplier: Float = 1.0f
   var viewDistanceFog: Float = 32f
   @Volatile var remotePlayers: List<RemotePlayerState> = emptyList()
+  private val remoteFlashUntilMs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+  private val lastRemoteHealth = java.util.concurrent.ConcurrentHashMap<String, Float>()
   private var screenAspect: Float = 1.777f
+
+  fun flashRemotePlayer(playerId: String, durationMs: Long = 280L) {
+    remoteFlashUntilMs[playerId] = System.currentTimeMillis() + durationMs
+  }
 
   private val mvpMatrix = FloatArray(16)
   private val projectionMatrix = FloatArray(16)
@@ -45,6 +52,7 @@ class VoxelRenderer(
   private var uTextureLoc: Int = 0
   private var uFogColorLoc: Int = 0
   private var uSunlightLoc: Int = 0
+  private var uHurtTintLoc: Int = 0
   private var aPositionLoc: Int = 0
   private var aTexCoordLoc: Int = 0
   private var aShadeLoc: Int = 0
@@ -89,7 +97,7 @@ class VoxelRenderer(
 
   override fun onDrawFrame(gl: GL10?) {
     // 1. Advance day/night cycle
-    timeOfDay = (timeOfDay + 1.2f) % 24000f
+    timeOfDay = (timeOfDay + 1.2f * timeSpeedMultiplier) % 24000f
     val sunAngle = (timeOfDay / 24000f) * 2f * Math.PI.toFloat()
     val sunlight = (sin(sunAngle) * 0.7f + 0.3f).coerceIn(0.18f, 1.0f)
 
@@ -192,6 +200,7 @@ class VoxelRenderer(
     GLES20.glUniform1i(uTextureLoc, 0)
     GLES20.glUniform4f(uFogColorLoc, fogR, fogG, fogB, 1.0f)
     GLES20.glUniform1f(uSunlightLoc, sunlight)
+    GLES20.glUniform1f(uHurtTintLoc, 0.0f)
 
     Matrix.setIdentityM(modelMatrix, 0)
     Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
@@ -557,10 +566,22 @@ class VoxelRenderer(
     GLES20.glUniform1i(uTextureLoc, 0)
     GLES20.glUniform1f(uSunlightLoc, max(0.45f, sunlight))
 
+    val now = System.currentTimeMillis()
     for (rp in peers) {
+      val prevHp = lastRemoteHealth.put(rp.playerId, rp.health)
+      if (prevHp != null && rp.health < prevHp) {
+        remoteFlashUntilMs[rp.playerId] = now + 300L
+      }
+      val isFlashing = (remoteFlashUntilMs[rp.playerId] ?: 0L) > now || rp.isDead
+      GLES20.glUniform1f(uHurtTintLoc, if (isFlashing) 1.0f else 0.0f)
+
+      val fallTilt = if (rp.isDead || rp.health <= 0f) 90f else 0f
+      val bodyOffsetY = if (rp.isDead || rp.health <= 0f) -0.45f else 0f
+
       // Head
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.48f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.48f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.rotateM(modelMatrix, 0, rp.pitch, 1f, 0f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
@@ -569,7 +590,8 @@ class VoxelRenderer(
 
       // Torso
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.90f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.90f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
@@ -577,7 +599,8 @@ class VoxelRenderer(
 
       // Left Arm
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, -0.28f, -0.26f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
@@ -586,7 +609,8 @@ class VoxelRenderer(
 
       // Right Arm
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 1.15f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, 0.28f, -0.26f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
@@ -595,7 +619,8 @@ class VoxelRenderer(
 
       // Left Leg
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, -0.10f, 0f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
@@ -604,13 +629,15 @@ class VoxelRenderer(
 
       // Right Leg
       Matrix.setIdentityM(modelMatrix, 0)
-      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f, rp.z)
+      Matrix.translateM(modelMatrix, 0, rp.x, rp.y + 0.30f + bodyOffsetY, rp.z)
+      if (fallTilt != 0f) Matrix.rotateM(modelMatrix, 0, fallTilt, 0f, 0f, 1f)
       Matrix.rotateM(modelMatrix, 0, -rp.yaw, 0f, 1f, 0f)
       Matrix.translateM(modelMatrix, 0, 0.10f, 0f, 0f)
       Matrix.multiplyMM(tempMatrix, 0, viewMatrix, 0, modelMatrix, 0)
       Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, tempMatrix, 0)
       drawTexturedBox(mvpMatrix, 0.09f, 0.30f, 0.09f, 33, 33, 33, 33, 33, 33)
     }
+    GLES20.glUniform1f(uHurtTintLoc, 0.0f)
   }
 
   private fun renderHandTool(sunlight: Float) {
@@ -618,6 +645,7 @@ class VoxelRenderer(
     // Clear depth buffer so first-person hand and held item are ALWAYS drawn in foreground
     GLES20.glClear(GLES20.GL_DEPTH_BUFFER_BIT)
     GLES20.glUniform1f(uSunlightLoc, max(0.65f, sunlight))
+    GLES20.glUniform1f(uHurtTintLoc, 0.0f)
 
     val handMatrix = FloatArray(16)
     val handProj = FloatArray(16)
@@ -873,6 +901,7 @@ class VoxelRenderer(
       uniform sampler2D uTexture;
       uniform vec4 uFogColor;
       uniform float uSunlight;
+      uniform float uHurtTint;
       varying vec2 vTexCoord;
       varying float vShade;
       varying float vFogFactor;
@@ -880,7 +909,8 @@ class VoxelRenderer(
         vec4 texColor = texture2D(uTexture, vTexCoord);
         if (texColor.a < 0.1) discard;
         vec3 lit = texColor.rgb * vShade * max(0.20, uSunlight);
-        gl_FragColor = vec4(mix(lit, uFogColor.rgb, vFogFactor), texColor.a);
+        vec3 tinted = mix(lit, vec3(0.95, 0.12, 0.12), clamp(uHurtTint, 0.0, 1.0) * 0.65);
+        gl_FragColor = vec4(mix(tinted, uFogColor.rgb, vFogFactor), texColor.a);
       }
     """.trimIndent()
 
@@ -897,6 +927,7 @@ class VoxelRenderer(
     uTextureLoc = GLES20.glGetUniformLocation(programId, "uTexture")
     uFogColorLoc = GLES20.glGetUniformLocation(programId, "uFogColor")
     uSunlightLoc = GLES20.glGetUniformLocation(programId, "uSunlight")
+    uHurtTintLoc = GLES20.glGetUniformLocation(programId, "uHurtTint")
     aPositionLoc = GLES20.glGetAttribLocation(programId, "aPosition")
     aTexCoordLoc = GLES20.glGetAttribLocation(programId, "aTexCoord")
     aShadeLoc = GLES20.glGetAttribLocation(programId, "aShade")

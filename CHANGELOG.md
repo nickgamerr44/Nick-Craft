@@ -1,9 +1,12 @@
 # Novidades do Nick Craft
 
-## 0.03 - Ícones Próprios e Multiplayer Online (14/11/2026)
+## 0.03 - Ícones Próprios e Multiplayer Online (15/11/2026)
 
 - Ícone próprio em pixel art para cada item do jogo (blocos, ferramentas, armas, minérios, alimentos e materiais).
 - Novo Multiplayer Online (funciona à distância entre redes diferentes): transforme qualquer mundo seu em servidor com código de acesso e limite de até 5 jogadores conectados ao mesmo tempo.
+- Combate PvP entre jogadores: bater em outro jogador causa dano com feedback visual/sonoro e exibe barra de vida.
+- Tela de Morte e Respawn: ao chegar a 0 de vida, surge a tela "Você morreu!" com botão "Renascer no Spawn" que restaura a vida no Spawn.
+- Atualização automática pelo GitHub (`live_config.json`) sem precisar trocar o número da versão.
 - Sincronização em tempo real dos jogadores em 3D e das construções/quebras de blocos.
 
 ## 0.02 - Correção de Controles e Remoção de Mobs (14/11/2026)

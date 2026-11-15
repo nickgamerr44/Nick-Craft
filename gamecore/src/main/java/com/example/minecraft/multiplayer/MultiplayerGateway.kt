@@ -16,6 +16,7 @@ interface MultiplayerGateway {
   val sessionState: StateFlow<MultiplayerSessionState>
   val availableServers: StateFlow<List<ServerSummary>>
   val remoteBlockEdits: SharedFlow<BlockEditEvent>
+  val remotePlayerHits: SharedFlow<PlayerHitEvent>
 
   suspend fun trySilentSignIn(context: Context): Boolean
   suspend fun signInWithGoogle(activityContext: Context): Result<String>
@@ -41,8 +42,9 @@ interface MultiplayerGateway {
     player: Player
   ): Result<WorldInfo>
 
-  fun publishLocalPlayerState(player: Player)
+  fun publishLocalPlayerState(player: Player, forceImmediate: Boolean = false)
   fun publishBlockEdit(x: Int, y: Int, z: Int, blockType: BlockType)
+  fun publishPlayerHit(targetPlayerId: String, damage: Float)
   suspend fun closeOrLeaveServer()
   fun clearError()
 }

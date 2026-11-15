@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -30,9 +32,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.minecraft.data.GitHubLiveConfigRepository
+import com.example.minecraft.data.LiveSyncStatus
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.engine.AudioEngine
 import com.example.minecraft.model.GameMode
@@ -47,6 +56,7 @@ fun GameMainMenuScreen(
   storage: WorldStorage,
   versionTag: String = "0.03",
   multiplayerGateway: MultiplayerGateway? = null,
+  liveConfigRepository: GitHubLiveConfigRepository? = null,
   onStartGame: (
     worldName: String,
     gameMode: GameMode,
@@ -65,9 +75,29 @@ fun GameMainMenuScreen(
   var showOptionsDialog by remember { mutableStateOf(false) }
   var sensitivity by remember { mutableFloatStateOf(1.0f) }
 
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
   val scope = rememberCoroutineScope()
   val worlds = remember { storage.listWorlds() }
   val versionProfile = remember(versionTag) { GameVersionProfile.fromVersionTag(versionTag) }
+  val liveRepo = remember(liveConfigRepository, context) {
+    liveConfigRepository ?: GitHubLiveConfigRepository(cacheDir = context.filesDir)
+  }
+  val liveConfig by liveRepo.config.collectAsStateWithLifecycle()
+  val liveStatus by liveRepo.syncStatus.collectAsStateWithLifecycle()
+
+  LaunchedEffect(liveRepo) {
+    liveRepo.syncFromGitHub()
+  }
+  DisposableEffect(lifecycleOwner, liveRepo) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        scope.launch { liveRepo.syncIfStale(minIntervalMs = 8_000L) }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   if (onExitToLauncher != null) {
     BackHandler(
@@ -238,7 +268,7 @@ fun GameMainMenuScreen(
           .fillMaxWidth()
           .padding(8.dp),
         verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.Start
+        horizontalArrangement = Arrangement.SpaceBetween
       ) {
         Text(
           text = "Versão $versionTag",
@@ -247,6 +277,23 @@ fun GameMainMenuScreen(
           modifier = Modifier
             .padding(8.dp)
             .testTag("textview2")
+        )
+
+        val liveLabel = when (val st = liveStatus) {
+          is LiveSyncStatus.Synced -> {
+            val title = st.patchTitle.ifBlank { liveConfig.announcement.ifBlank { "Atualizado pelo GitHub" } }
+            "GitHub Live #${st.configVersion} • $title"
+          }
+          is LiveSyncStatus.Syncing -> "Sincronizando GitHub..."
+          else -> liveConfig.motd.ifBlank { "GitHub Live #${liveConfig.configVersion}" }
+        }
+        Text(
+          text = liveLabel,
+          color = Color(0xFFA7F3D0),
+          fontSize = 11.sp,
+          modifier = Modifier
+            .padding(8.dp)
+            .testTag("github_live_status")
         )
       }
     }

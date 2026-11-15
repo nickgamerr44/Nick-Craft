@@ -6,23 +6,15 @@ const {
   assertFails,
   assertSucceeds
 } = require('@firebase/rules-unit-testing');
-const {
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  collection,
-  query,
-  where,
-  serverTimestamp
-} = require('firebase/firestore');
 
 const PROJECT_ID = 'gen-lang-client-0533985160';
 const DATABASE_ID = 'ai-studio-android-craftjav-6e425379-0e74-4e3e-8426-ff0352412cbe';
 
 let testEnv;
+
+function tsNow() {
+  return new Date(Date.now() - 1000);
+}
 
 function makeServerPayload(hostUid, overrides = {}) {
   return {
@@ -36,8 +28,8 @@ function makeServerPayload(hostUid, overrides = {}) {
     memberUids: [hostUid],
     isOpen: true,
     blocksBase64: 'H4sIAAAAAAAA/w==',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    createdAt: tsNow(),
+    updatedAt: tsNow(),
     ...overrides
   };
 }
@@ -61,80 +53,147 @@ after(async () => {
 test('unauthenticated caller cannot read or write world_servers', async () => {
   await testEnv.clearFirestore();
   const anonDb = testEnv.unauthenticatedContext().firestore(DATABASE_ID);
-  await assertFails(getDoc(doc(anonDb, 'world_servers', 'NC4829')));
-  await assertFails(setDoc(doc(anonDb, 'world_servers', 'NC4829'), makeServerPayload('u1')));
-  await assertFails(getDocs(query(collection(anonDb, 'world_servers'), where('isOpen', '==', true))));
+  await assertFails(anonDb.collection('world_servers').doc('NC4829').get());
+  await assertFails(anonDb.collection('world_servers').doc('NC4829').set(makeServerPayload('u1')));
+  await assertFails(anonDb.collection('world_servers').where('isOpen', '==', true).get());
 });
 
 test('host creates server with maxPlayers=5 and up to 5 players can join; 6th player is rejected', async () => {
   await testEnv.clearFirestore();
   const hostDb = testEnv.authenticatedContext('p1').firestore(DATABASE_ID);
-  const serverRef = doc(hostDb, 'world_servers', 'NC4829');
+  const serverRef = hostDb.collection('world_servers').doc('NC4829');
 
   // Cannot create server with maxPlayers != 5
-  await assertFails(setDoc(serverRef, makeServerPayload('p1', { maxPlayers: 10 })));
+  await assertFails(serverRef.set(makeServerPayload('p1', { maxPlayers: 10 })));
 
   // Valid host creation
-  await assertSucceeds(setDoc(serverRef, makeServerPayload('p1')));
+  await assertSucceeds(serverRef.set(makeServerPayload('p1')));
 
   // Players p2, p3, p4, p5 join sequentially
   for (const [idx, uid] of ['p2', 'p3', 'p4', 'p5'].entries()) {
     const playerDb = testEnv.authenticatedContext(uid).firestore(DATABASE_ID);
-    const snap = await getDoc(doc(playerDb, 'world_servers', 'NC4829'));
+    const snap = await playerDb.collection('world_servers').doc('NC4829').get();
     const currentMembers = snap.data().memberUids;
     assert.equal(currentMembers.length, idx + 1);
-    await assertSucceeds(updateDoc(doc(playerDb, 'world_servers', 'NC4829'), {
+    await assertSucceeds(playerDb.collection('world_servers').doc('NC4829').update({
       memberUids: [...currentMembers, uid],
-      updatedAt: serverTimestamp()
+      updatedAt: tsNow()
     }));
   }
 
   // 6th player (p6) MUST be rejected by Firestore rules
   const p6Db = testEnv.authenticatedContext('p6').firestore(DATABASE_ID);
-  const snapFull = await getDoc(doc(p6Db, 'world_servers', 'NC4829'));
-  await assertFails(updateDoc(doc(p6Db, 'world_servers', 'NC4829'), {
+  const snapFull = await p6Db.collection('world_servers').doc('NC4829').get();
+  await assertFails(p6Db.collection('world_servers').doc('NC4829').update({
     memberUids: [...snapFull.data().memberUids, 'p6'],
-    updatedAt: serverTimestamp()
+    updatedAt: tsNow()
   }));
 
   // Non-member cannot write player pose or block edit
-  await assertFails(setDoc(doc(p6Db, 'world_servers', 'NC4829', 'players', 'p6'), {
-    uid: 'p6', displayName: 'Intruder', x: 24, y: 12, z: 24, yaw: 0, pitch: 0, slotIndex: 4, updatedAt: serverTimestamp()
+  await assertFails(p6Db.collection('world_servers').doc('NC4829').collection('players').doc('p6').set({
+    uid: 'p6', displayName: 'Intruder', x: 24, y: 12, z: 24, yaw: 0, pitch: 0, slotIndex: 4, updatedAt: tsNow()
   }));
-  await assertFails(setDoc(doc(p6Db, 'world_servers', 'NC4829', 'block_edits', 'edit1'), {
-    x: 10, y: 10, z: 10, blockId: 1, authorUid: 'p6', createdAt: serverTimestamp()
+  await assertFails(p6Db.collection('world_servers').doc('NC4829').collection('block_edits').doc('edit1').set({
+    x: 10, y: 10, z: 10, blockId: 1, authorUid: 'p6', createdAt: tsNow()
   }));
 
   // Valid member p2 can update own player pose & create block edit, but cannot spoof p3
   const p2Db = testEnv.authenticatedContext('p2').firestore(DATABASE_ID);
-  await assertSucceeds(setDoc(doc(p2Db, 'world_servers', 'NC4829', 'players', 'p2'), {
-    uid: 'p2', displayName: 'Player 2', x: 24.5, y: 12.0, z: 24.5, yaw: 45.0, pitch: 0.0, slotIndex: 1, updatedAt: serverTimestamp()
+  await assertSucceeds(p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+    uid: 'p2', displayName: 'Player 2', x: 24.5, y: 12.0, z: 24.5, yaw: 45.0, pitch: 0.0, slotIndex: 1, updatedAt: tsNow()
   }));
-  await assertFails(setDoc(doc(p2Db, 'world_servers', 'NC4829', 'players', 'p3'), {
-    uid: 'p2', displayName: 'Spoof', x: 24.5, y: 12.0, z: 24.5, yaw: 0, pitch: 0, slotIndex: 2, updatedAt: serverTimestamp()
+  await assertFails(p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p3').set({
+    uid: 'p2', displayName: 'Spoof', x: 24.5, y: 12.0, z: 24.5, yaw: 0, pitch: 0, slotIndex: 2, updatedAt: tsNow()
   }));
-  await assertSucceeds(setDoc(doc(p2Db, 'world_servers', 'NC4829', 'block_edits', 'edit_ok'), {
-    x: 10, y: 10, z: 10, blockId: 2, authorUid: 'p2', createdAt: serverTimestamp()
+  await assertSucceeds(p2Db.collection('world_servers').doc('NC4829').collection('block_edits').doc('edit_ok').set({
+    x: 10, y: 10, z: 10, blockId: 2, authorUid: 'p2', createdAt: tsNow()
   }));
 
   // p5 leaves cleanly, opening 5th slot again
   const p5Db = testEnv.authenticatedContext('p5').firestore(DATABASE_ID);
-  await assertSucceeds(updateDoc(doc(p5Db, 'world_servers', 'NC4829'), {
+  await assertSucceeds(p5Db.collection('world_servers').doc('NC4829').update({
     memberUids: ['p1', 'p2', 'p3', 'p4'],
-    updatedAt: serverTimestamp()
+    updatedAt: tsNow()
   }));
 });
 
 test('non-host cannot delete or close server', async () => {
   await testEnv.clearFirestore();
   const hostDb = testEnv.authenticatedContext('p1').firestore(DATABASE_ID);
-  await assertSucceeds(setDoc(doc(hostDb, 'world_servers', 'NC4829'), makeServerPayload('p1')));
+  await assertSucceeds(hostDb.collection('world_servers').doc('NC4829').set(makeServerPayload('p1')));
 
   const p2Db = testEnv.authenticatedContext('p2').firestore(DATABASE_ID);
-  await assertFails(updateDoc(doc(p2Db, 'world_servers', 'NC4829'), {
+  await assertFails(p2Db.collection('world_servers').doc('NC4829').update({
     isOpen: false,
-    updatedAt: serverTimestamp()
+    updatedAt: tsNow()
   }));
-  await assertFails(deleteDoc(doc(p2Db, 'world_servers', 'NC4829')));
-  await assertSucceeds(deleteDoc(doc(hostDb, 'world_servers', 'NC4829')));
+  await assertFails(p2Db.collection('world_servers').doc('NC4829').delete());
+  await assertSucceeds(hostDb.collection('world_servers').doc('NC4829').delete());
+});
+
+test('server members can record PvP player_hits and update own health/death/respawn securely', async () => {
+  await testEnv.clearFirestore();
+  const p1Db = testEnv.authenticatedContext('p1').firestore(DATABASE_ID);
+  await assertSucceeds(p1Db.collection('world_servers').doc('NC4829').set(makeServerPayload('p1')));
+
+  const p2Db = testEnv.authenticatedContext('p2').firestore(DATABASE_ID);
+  await assertSucceeds(p2Db.collection('world_servers').doc('NC4829').update({
+    memberUids: ['p1', 'p2'],
+    updatedAt: tsNow()
+  }));
+
+  // Valid PvP hit from p1 against p2
+  await assertSucceeds(
+    p1Db.collection('world_servers').doc('NC4829').collection('player_hits').doc('hit_1').set({
+      attackerUid: 'p1',
+      attackerName: 'Nick',
+      targetUid: 'p2',
+      damage: 7.0,
+      createdAt: tsNow()
+    })
+  );
+
+  // p2 reads player_hits and updates own health to 0 (dead) then respawns to 20
+  await assertSucceeds(
+    p2Db.collection('world_servers').doc('NC4829').collection('player_hits').get()
+  );
+  await assertSucceeds(
+    p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+      uid: 'p2', displayName: 'Jogador2', x: 25.0, y: 12.0, z: 25.0, yaw: 0.0, pitch: 0.0,
+      slotIndex: 1, health: 0.0, isDead: true, updatedAt: tsNow()
+    })
+  );
+  await assertSucceeds(
+    p2Db.collection('world_servers').doc('NC4829').collection('players').doc('p2').set({
+      uid: 'p2', displayName: 'Jogador2', x: 24.5, y: 14.0, z: 24.5, yaw: 0.0, pitch: 0.0,
+      slotIndex: 1, health: 20.0, isDead: false, updatedAt: tsNow()
+    })
+  );
+
+  // Reject self-hit, spoofed attackerUid, invalid damage, mutation/deletion, and outsider hit
+  await assertFails(
+    p1Db.collection('world_servers').doc('NC4829').collection('player_hits').doc('self_hit').set({
+      attackerUid: 'p1', attackerName: 'Nick', targetUid: 'p1', damage: 2.0, createdAt: tsNow()
+    })
+  );
+  await assertFails(
+    p2Db.collection('world_servers').doc('NC4829').collection('player_hits').doc('spoof_hit').set({
+      attackerUid: 'p1', attackerName: 'Spoof', targetUid: 'p2', damage: 5.0, createdAt: tsNow()
+    })
+  );
+  await assertFails(
+    p1Db.collection('world_servers').doc('NC4829').collection('player_hits').doc('bad_dmg').set({
+      attackerUid: 'p1', attackerName: 'Nick', targetUid: 'p2', damage: 99.0, createdAt: tsNow()
+    })
+  );
+  await assertFails(
+    p1Db.collection('world_servers').doc('NC4829').collection('player_hits').doc('hit_1').delete()
+  );
+
+  const outsiderDb = testEnv.authenticatedContext('p9').firestore(DATABASE_ID);
+  await assertFails(
+    outsiderDb.collection('world_servers').doc('NC4829').collection('player_hits').doc('outsider_hit').set({
+      attackerUid: 'p9', attackerName: 'Intruder', targetUid: 'p2', damage: 4.0, createdAt: tsNow()
+    })
+  );
 });

@@ -19,7 +19,17 @@ data class RemotePlayerState(
   val z: Float,
   val yaw: Float,
   val pitch: Float,
-  val slotIndex: Int = 0
+  val slotIndex: Int = 0,
+  val health: Float = 20f,
+  val isDead: Boolean = false
+)
+
+data class PlayerHitEvent(
+  val targetPlayerId: String,
+  val attackerId: String,
+  val attackerName: String,
+  val damage: Float,
+  val timestamp: Long = System.currentTimeMillis()
 )
 
 data class BlockEditEvent(

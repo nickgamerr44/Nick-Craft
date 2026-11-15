@@ -121,7 +121,7 @@ service cloud.firestore {
           request.auth.uid == playerUid &&
           isServerMember(serverId) &&
           request.resource.data.keys().hasAll(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt']) &&
-          request.resource.data.keys().hasOnly(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt']) &&
+          request.resource.data.keys().hasOnly(['uid', 'displayName', 'x', 'y', 'z', 'yaw', 'pitch', 'slotIndex', 'updatedAt', 'health', 'isDead']) &&
           request.resource.data.uid == request.auth.uid &&
           request.resource.data.displayName is string &&
           request.resource.data.displayName.size() >= 1 &&
@@ -134,6 +134,8 @@ service cloud.firestore {
           request.resource.data.slotIndex is int &&
           request.resource.data.slotIndex >= 0 &&
           request.resource.data.slotIndex < 5 &&
+          (!('health' in request.resource.data) || (request.resource.data.health is number && request.resource.data.health >= 0 && request.resource.data.health <= 20)) &&
+          (!('isDead' in request.resource.data) || request.resource.data.isDead is bool) &&
           request.resource.data.updatedAt is timestamp &&
           request.resource.data.updatedAt <= request.time;
 
@@ -158,6 +160,33 @@ service cloud.firestore {
           request.resource.data.z is int && request.resource.data.z >= 0 && request.resource.data.z < 128 &&
           request.resource.data.blockId is int && request.resource.data.blockId >= 0 && request.resource.data.blockId <= 127 &&
           request.resource.data.authorUid == request.auth.uid &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdAt <= request.time;
+
+        allow update, delete: if false;
+      }
+
+      match /player_hits/{hitId} {
+        allow get: if isSignedIn() && isValidId(serverId) && isValidId(hitId) && isServerMember(serverId);
+        allow list: if isSignedIn() && isValidId(serverId) && isServerMember(serverId);
+
+        allow create: if isSignedIn() &&
+          isValidId(serverId) &&
+          isValidId(hitId) &&
+          isServerMember(serverId) &&
+          request.resource.data.keys().hasAll(['attackerUid', 'attackerName', 'targetUid', 'damage', 'createdAt']) &&
+          request.resource.data.keys().hasOnly(['attackerUid', 'attackerName', 'targetUid', 'damage', 'createdAt']) &&
+          request.resource.data.attackerUid == request.auth.uid &&
+          request.resource.data.attackerName is string &&
+          request.resource.data.attackerName.size() >= 1 &&
+          request.resource.data.attackerName.size() <= 40 &&
+          request.resource.data.targetUid is string &&
+          request.resource.data.targetUid.size() >= 2 &&
+          request.resource.data.targetUid.size() <= 128 &&
+          request.resource.data.targetUid != request.auth.uid &&
+          request.resource.data.damage is number &&
+          request.resource.data.damage > 0 &&
+          request.resource.data.damage <= 20 &&
           request.resource.data.createdAt is timestamp &&
           request.resource.data.createdAt <= request.time;
 

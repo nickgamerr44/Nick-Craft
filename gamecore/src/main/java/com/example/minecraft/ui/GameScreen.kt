@@ -43,7 +43,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.minecraft.data.GitHubLiveConfigRepository
+import com.example.minecraft.data.LiveGameConfig
 import com.example.minecraft.data.WorldInfo
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.engine.AudioEngine
@@ -53,10 +58,12 @@ import com.example.minecraft.model.GameMode
 import com.example.minecraft.model.GameVersionProfile
 import com.example.minecraft.model.ItemType
 import com.example.minecraft.model.Player
+import com.example.minecraft.model.PlayerCombat
 import com.example.minecraft.model.VoxelWorld
 import com.example.minecraft.model.WorldGenerator
 import com.example.minecraft.multiplayer.MultiplayerGateway
 import com.example.minecraft.multiplayer.MultiplayerSessionState
+import com.example.minecraft.multiplayer.RemotePlayerState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -69,15 +76,22 @@ fun GameScreen(
   onExitToTitle: () -> Unit,
   versionTag: String = "0.03",
   multiplayerGateway: MultiplayerGateway? = null,
+  liveConfigRepository: GitHubLiveConfigRepository? = null,
   initialStartAsServer: Boolean = false,
   preloadedWorld: VoxelWorld? = null,
   isRemoteClient: Boolean = false
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
+  val lifecycleOwner = LocalLifecycleOwner.current
 
-  // 1. World, Version Profile and Player instances
+  // 1. World, Version Profile, Live GitHub Config, and Player instances
   val versionProfile = remember(versionTag) { GameVersionProfile.fromVersionTag(versionTag) }
+  val liveRepo = remember(liveConfigRepository, context) {
+    liveConfigRepository ?: GitHubLiveConfigRepository(cacheDir = context.filesDir)
+  }
+  val liveConfig by liveRepo.config.collectAsStateWithLifecycle()
+
   val world = remember(worldInfo.id) { preloadedWorld ?: VoxelWorld() }
   val player = remember(worldInfo.id) { Player() }
 
@@ -85,6 +99,20 @@ fun GameScreen(
     ?: remember { mutableStateOf(MultiplayerSessionState()) })
   val mpUserUid by (multiplayerGateway?.currentUserUid?.collectAsStateWithLifecycle()
     ?: remember { mutableStateOf<String?>(null) })
+
+  // Automatic GitHub live sync on game launch & every foreground resume without needing version bump
+  LaunchedEffect(liveRepo) {
+    liveRepo.syncFromGitHub()
+  }
+  androidx.compose.runtime.DisposableEffect(lifecycleOwner, liveRepo) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        scope.launch { liveRepo.syncIfStale(minIntervalMs = 8_000L) }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   // Initialize or load world
   LaunchedEffect(worldInfo.id) {
@@ -94,12 +122,9 @@ fun GameScreen(
       if (!loaded) {
         WorldGenerator.generate(world, worldInfo.seed)
         player.inventory.setupStartingKit(worldInfo.gameMode == GameMode.CREATIVE)
-        for (y in 28 downTo 5) {
-          if (world.getBlock(24, y, 24).isSolid) {
-            player.y = (y + 1).toFloat()
-            break
-          }
-        }
+        player.x = liveConfig.spawnX
+        player.z = liveConfig.spawnZ
+        player.y = PlayerCombat.findSurfaceSpawnY(world, liveConfig.spawnX, liveConfig.spawnZ)
       }
       if (initialStartAsServer && multiplayerGateway != null) {
         if (!multiplayerGateway.requiresSignIn || multiplayerGateway.currentUserUid.value != null) {
@@ -108,22 +133,36 @@ fun GameScreen(
       }
     } else {
       player.inventory.setupStartingKit(worldInfo.gameMode == GameMode.CREATIVE)
-      for (y in 28 downTo 5) {
-        if (world.getBlock(24, y, 24).isSolid) {
-          player.y = (y + 1).toFloat()
-          break
-        }
-      }
+      player.x = liveConfig.spawnX
+      player.z = liveConfig.spawnZ
+      player.y = PlayerCombat.findSurfaceSpawnY(world, liveConfig.spawnX, liveConfig.spawnZ)
     }
   }
 
   // 2. Renderer instance
   val renderer = remember(world, player) { VoxelRenderer(context, world, player) }
 
-  // Sync remote players list into OpenGL renderer
+  // Sync remote players and live time speed into OpenGL renderer
   LaunchedEffect(mpState.remotePlayers, versionProfile.enableMultiplayer) {
     renderer.remotePlayers = if (versionProfile.enableMultiplayer) mpState.remotePlayers else emptyList()
   }
+  LaunchedEffect(liveConfig.timeSpeedMultiplier) {
+    renderer.timeSpeedMultiplier = liveConfig.timeSpeedMultiplier
+  }
+
+  // 3. UI & Combat States
+  var showPauseMenu by remember { mutableStateOf(false) }
+  var showInventory by remember { mutableStateOf(false) }
+  var hasCraftingTableOpen by remember { mutableStateOf(false) }
+  var showF3Debug by remember { mutableStateOf(false) }
+  var activeCameraMode by remember { mutableStateOf(player.cameraMode) }
+
+  var isPlayerDead by remember { mutableStateOf(false) }
+  var lastAttackerName by remember { mutableStateOf<String?>(null) }
+  var playerHealthHud by remember { mutableFloatStateOf(player.health) }
+  var playerHungerHud by remember { mutableFloatStateOf(player.hunger) }
+  var damageFlashAlpha by remember { mutableFloatStateOf(0f) }
+  var lastMeleeAttackMs by remember { mutableLongStateOf(0L) }
 
   // Receive live block edits from remote players
   LaunchedEffect(multiplayerGateway, versionProfile.enableMultiplayer) {
@@ -134,12 +173,22 @@ fun GameScreen(
     }
   }
 
-  // 3. UI States
-  var showPauseMenu by remember { mutableStateOf(false) }
-  var showInventory by remember { mutableStateOf(false) }
-  var hasCraftingTableOpen by remember { mutableStateOf(false) }
-  var showF3Debug by remember { mutableStateOf(false) }
-  var activeCameraMode by remember { mutableStateOf(player.cameraMode) }
+  // Receive incoming PvP damage from remote players
+  LaunchedEffect(multiplayerGateway, versionProfile.enableMultiplayer) {
+    if (!versionProfile.enableMultiplayer) return@LaunchedEffect
+    multiplayerGateway?.remotePlayerHits?.collect { hit ->
+      if (!liveConfig.pvpEnabled || isPlayerDead) return@collect
+      player.takeDamage(hit.damage, bypassCreative = liveConfig.pvpDamagesCreative)
+      playerHealthHud = player.health
+      damageFlashAlpha = 0.45f
+      lastAttackerName = hit.attackerName
+      AudioEngine.playHurt()
+      if (player.health <= 0f) {
+        isPlayerDead = true
+      }
+      multiplayerGateway.publishLocalPlayerState(player, forceImmediate = true)
+    }
+  }
 
   // Controls input states
   var moveForward by remember { mutableFloatStateOf(0f) }
@@ -153,65 +202,104 @@ fun GameScreen(
   var touchDragAccumX by remember { mutableFloatStateOf(0f) }
   var touchDragAccumY by remember { mutableFloatStateOf(0f) }
 
-  // Targeted block and break progress
+  // Targeted block / remote player and break progress
   var targetedBlockName by remember { mutableStateOf("") }
+  var targetedRemotePlayer by remember { mutableStateOf<RemotePlayerState?>(null) }
   var breakProgressState by remember { mutableFloatStateOf(0f) }
   var inventoryVersion by remember { mutableIntStateOf(0) }
 
   val isMoving = (moveForward != 0f || moveStrafe != 0f)
 
+  val handleRespawn: () -> Unit = {
+    val spawnX = liveConfig.spawnX
+    val spawnZ = liveConfig.spawnZ
+    val spawnY = PlayerCombat.findSurfaceSpawnY(world, spawnX, spawnZ)
+    player.respawn(spawnX, spawnY, spawnZ, liveConfig.respawnHealth)
+    playerHealthHud = player.health
+    playerHungerHud = player.hunger
+    isPlayerDead = false
+    lastAttackerName = null
+    damageFlashAlpha = 0f
+    breakProgressState = 0f
+    renderer.breakProgress = 0f
+    AudioEngine.playDing()
+    if (versionProfile.enableMultiplayer) {
+      multiplayerGateway?.publishLocalPlayerState(player, forceImmediate = true)
+    }
+  }
+
   BackHandler {
     when {
+      isPlayerDead -> handleRespawn()
       showInventory -> showInventory = false
       showPauseMenu -> showPauseMenu = false
       else -> showPauseMenu = true
     }
   }
 
-  // Helper to place block or interact on tap
+  // Helper to attack remote players, place block, or interact on tap
   val handleTapInteraction: () -> Unit = {
-    player.triggerSwing()
+    if (!isPlayerDead) {
+      player.triggerSwing()
 
-    val hit = renderer.currentTargetHit
-    if (hit != null) {
-      if (hit.block == BlockType.CRAFTING_TABLE) {
-        hasCraftingTableOpen = true
-        showInventory = true
-      } else if (hit.block == BlockType.TNT) {
-        world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
-        if (versionProfile.enableMultiplayer) {
-          multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
-        }
-        AudioEngine.playExplosion()
-      } else {
-        val selected = player.inventory.selectedItem
-        val blockToPlace = selected?.item?.blockType
-        if (blockToPlace != null && blockToPlace != BlockType.AIR) {
-          val px = hit.blockX + hit.normalX
-          val py = hit.blockY + hit.normalY
-          val pz = hit.blockZ + hit.normalZ
+      val remoteHit = targetedRemotePlayer
+      val blockHit = renderer.currentTargetHit
+      val nowMs = System.currentTimeMillis()
+      val canHitRemote = remoteHit != null &&
+        versionProfile.enableMultiplayer &&
+        liveConfig.pvpEnabled &&
+        !remoteHit.isDead &&
+        remoteHit.health > 0f &&
+        nowMs - lastMeleeAttackMs >= 320L
 
-          val playerMinX = player.x - player.halfW
-          val playerMaxX = player.x + player.halfW
-          val playerMinY = player.y
-          val playerMaxY = player.y + player.height
-          val playerMinZ = player.z - player.halfW
-          val playerMaxZ = player.z + player.halfW
+      if (canHitRemote && remoteHit != null) {
+        lastMeleeAttackMs = nowMs
+        val heldItem = player.inventory.selectedItem?.item
+        val damage = PlayerCombat.calculatePvpDamage(heldItem, liveConfig)
+        renderer.flashRemotePlayer(remoteHit.playerId)
+        AudioEngine.playHurt()
+        multiplayerGateway?.publishPlayerHit(remoteHit.playerId, damage)
+      } else if (blockHit != null) {
+        val hit = blockHit
+        if (hit.block == BlockType.CRAFTING_TABLE) {
+          hasCraftingTableOpen = true
+          showInventory = true
+        } else if (hit.block == BlockType.TNT) {
+          world.explode(hit.blockX, hit.blockY, hit.blockZ, 3.5f)
+          if (versionProfile.enableMultiplayer) {
+            multiplayerGateway?.publishBlockEdit(hit.blockX, hit.blockY, hit.blockZ, BlockType.AIR)
+          }
+          AudioEngine.playExplosion()
+        } else {
+          val selected = player.inventory.selectedItem
+          val blockToPlace = selected?.item?.blockType
+          if (blockToPlace != null && blockToPlace != BlockType.AIR) {
+            val px = hit.blockX + hit.normalX
+            val py = hit.blockY + hit.normalY
+            val pz = hit.blockZ + hit.normalZ
 
-          val collides = (px + 1 > playerMinX && px < playerMaxX) &&
+            val playerMinX = player.x - player.halfW
+            val playerMaxX = player.x + player.halfW
+            val playerMinY = player.y
+            val playerMaxY = player.y + player.height
+            val playerMinZ = player.z - player.halfW
+            val playerMaxZ = player.z + player.halfW
+
+            val collides = (px + 1 > playerMinX && px < playerMaxX) &&
               (py + 1 > playerMinY && py < playerMaxY) &&
               (pz + 1 > playerMinZ && pz < playerMaxZ)
 
-          if (!collides) {
-            if (world.setBlock(px, py, pz, blockToPlace)) {
-              if (versionProfile.enableMultiplayer) {
-                multiplayerGateway?.publishBlockEdit(px, py, pz, blockToPlace)
+            if (!collides) {
+              if (world.setBlock(px, py, pz, blockToPlace)) {
+                if (versionProfile.enableMultiplayer) {
+                  multiplayerGateway?.publishBlockEdit(px, py, pz, blockToPlace)
+                }
               }
-            }
-            AudioEngine.playPlace()
-            if (player.gameMode == GameMode.SURVIVAL) {
-              player.inventory.consumeSelectedItem()
-              inventoryVersion++
+              AudioEngine.playPlace()
+              if (player.gameMode == GameMode.SURVIVAL) {
+                player.inventory.consumeSelectedItem()
+                inventoryVersion++
+              }
             }
           }
         }
@@ -225,7 +313,11 @@ fun GameScreen(
     var stepSoundTimer = 0
 
     while (isActive) {
-      if (!showPauseMenu && !showInventory) {
+      if (damageFlashAlpha > 0f) {
+        damageFlashAlpha = (damageFlashAlpha - 0.03f).coerceAtLeast(0f)
+      }
+
+      if (!showPauseMenu && !showInventory && !isPlayerDead) {
         player.update(
           world = world,
           moveForward = moveForward,
@@ -233,8 +325,20 @@ fun GameScreen(
           jumpHeld = jumpHeld,
           descendHeld = descendHeld,
           fixLimbStopAnimation = versionProfile.fixLimbStopAnimation,
-          fixStrafeDirection = versionProfile.fixStrafeDirection
+          fixStrafeDirection = versionProfile.fixStrafeDirection,
+          walkSpeed = liveConfig.moveSpeed,
+          jumpVelocity = liveConfig.jumpVelocity,
+          gravity = liveConfig.gravity
         )
+        playerHealthHud = player.health
+        playerHungerHud = player.hunger
+        if (player.health <= 0f) {
+          isPlayerDead = true
+          if (versionProfile.enableMultiplayer) {
+            multiplayerGateway?.publishLocalPlayerState(player, forceImmediate = true)
+          }
+        }
+
         world.updateParticles()
         if (versionProfile.enableMultiplayer) {
           multiplayerGateway?.publishLocalPlayerState(player)
@@ -248,11 +352,33 @@ fun GameScreen(
           }
         }
 
-        // Raycasting
+        // Raycasting (check remote player melee target vs block target)
         val (lookDx, lookDy, lookDz) = player.getLookDirection()
         val hit = world.raycast(player.x, player.eyeY, player.z, lookDx, lookDy, lookDz, 5.5f)
         renderer.currentTargetHit = hit
-        targetedBlockName = hit?.block?.displayName ?: ""
+
+        val remoteHit = if (versionProfile.enableMultiplayer && liveConfig.pvpEnabled) {
+          PlayerCombat.raycastRemotePlayer(
+            originX = player.x,
+            originY = player.eyeY,
+            originZ = player.z,
+            dirX = lookDx,
+            dirY = lookDy,
+            dirZ = lookDz,
+            players = mpState.remotePlayers
+          )
+        } else null
+
+        val blockDist = hit?.distance ?: Float.MAX_VALUE
+        val activeRemoteTarget = if (remoteHit != null && remoteHit.distance <= blockDist + 0.15f) {
+          remoteHit.player
+        } else null
+        targetedRemotePlayer = activeRemoteTarget
+        targetedBlockName = if (activeRemoteTarget != null) {
+          "⚔ ${activeRemoteTarget.displayName} (${activeRemoteTarget.health.toInt()}/20 ❤)"
+        } else {
+          hit?.block?.displayName ?: ""
+        }
 
         // Check if holding finger to break block
         val now = System.currentTimeMillis()
@@ -604,16 +730,17 @@ fun GameScreen(
         .padding(bottom = 8.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      if (player.gameMode == GameMode.SURVIVAL) {
+      if (player.gameMode == GameMode.SURVIVAL || mpState.isActive || playerHealthHud < player.maxHealth) {
         Row(
           modifier = Modifier
             .width(360.dp)
-            .padding(bottom = 3.dp),
+            .padding(bottom = 3.dp)
+            .testTag("player_status_bars"),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically
         ) {
           Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            val hearts = (player.health / 2f).coerceIn(0f, 10f)
+            val hearts = (playerHealthHud / 2f).coerceIn(0f, 10f)
             for (i in 1..10) {
               Text(
                 text = if (i <= hearts) "❤️" else if (i - 0.5f <= hearts) "💔" else "🖤",
@@ -622,13 +749,15 @@ fun GameScreen(
             }
           }
 
-          Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-            val drumsticks = (player.hunger / 2f).coerceIn(0f, 10f)
-            for (i in 1..10) {
-              Text(
-                text = if (i <= drumsticks) "🍖" else "🦴",
-                fontSize = 11.sp
-              )
+          if (player.gameMode == GameMode.SURVIVAL) {
+            Row(horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+              val drumsticks = (playerHungerHud / 2f).coerceIn(0f, 10f)
+              for (i in 1..10) {
+                Text(
+                  text = if (i <= drumsticks) "🍖" else "🦴",
+                  fontSize = 11.sp
+                )
+              }
             }
           }
         }
@@ -761,6 +890,31 @@ fun GameScreen(
             storage.saveWorld(worldInfo, world, player)
           }
           showPauseMenu = false
+          scope.launch {
+            multiplayerGateway?.closeOrLeaveServer()
+            onExitToTitle()
+          }
+        }
+      )
+    }
+
+    // 10. Red Hurt Flash Overlay
+    if (damageFlashAlpha > 0.01f && !isPlayerDead) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .background(Color.Red.copy(alpha = damageFlashAlpha))
+      )
+    }
+
+    // 11. Death & Respawn Overlay when health reaches 0
+    if (isPlayerDead) {
+      DeathRespawnOverlay(
+        attackerName = lastAttackerName,
+        spawnX = liveConfig.spawnX,
+        spawnZ = liveConfig.spawnZ,
+        onRespawn = handleRespawn,
+        onExitToTitle = {
           scope.launch {
             multiplayerGateway?.closeOrLeaveServer()
             onExitToTitle()

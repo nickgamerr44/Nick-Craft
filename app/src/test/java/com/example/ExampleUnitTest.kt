@@ -618,4 +618,113 @@ class ExampleUnitTest {
       entry.dataDownloadUrl
     )
   }
+
+  @Test
+  fun testPvpRaycastHitsAliveRemotePlayerAndIgnoresDead() {
+    val alive = com.example.minecraft.multiplayer.RemotePlayerState(
+      playerId = "p2",
+      displayName = "Amigo",
+      x = 10.0f,
+      y = 5.0f,
+      z = 13.0f,
+      yaw = 0f,
+      pitch = 0f,
+      health = 20f,
+      isDead = false
+    )
+    val dead = alive.copy(playerId = "p3", displayName = "Caido", x = 10.0f, z = 11.5f, health = 0f, isDead = true)
+
+    // Looking along +Z from (10, 6.62, 10)
+    val hit = com.example.minecraft.model.PlayerCombat.raycastRemotePlayer(
+      originX = 10.0f,
+      originY = 6.62f,
+      originZ = 10.0f,
+      dirX = 0f,
+      dirY = 0f,
+      dirZ = 1f,
+      players = listOf(dead, alive)
+    )
+    assertNotNull(hit)
+    assertEquals("p2", hit?.player?.playerId)
+    assertTrue((hit?.distance ?: 99f) < 3.5f)
+  }
+
+  @Test
+  fun testPvpDamageAndRespawnAtSpawn() {
+    val world = VoxelWorld(32, 24, 32)
+    for (x in 0 until 32) {
+      for (z in 0 until 32) {
+        world.setBlock(x, 10, z, BlockType.GRASS)
+      }
+    }
+
+    val cfg = com.example.minecraft.data.LiveGameConfig(
+      pvpBaseFistDamage = 2.0f,
+      pvpDamageMultiplier = 1.0f,
+      spawnX = 24.5f,
+      spawnZ = 24.5f,
+      respawnHealth = 20.0f
+    )
+    assertEquals(2.0f, com.example.minecraft.model.PlayerCombat.calculatePvpDamage(null, cfg), 0.001f)
+    assertEquals(7.0f, com.example.minecraft.model.PlayerCombat.calculatePvpDamage(ItemType.DIAMOND_SWORD, cfg), 0.001f)
+
+    val player = Player(5f, 15f, 5f).apply {
+      gameMode = GameMode.CREATIVE
+    }
+    // Creative PvP bypasses invulnerability when pvpDamagesCreative=true
+    player.takeDamage(20f, bypassCreative = true)
+    assertEquals(0f, player.health, 0.001f)
+
+    val spawnY = com.example.minecraft.model.PlayerCombat.findSurfaceSpawnY(world, cfg.spawnX, cfg.spawnZ)
+    assertEquals(11.0f, spawnY, 0.001f)
+
+    player.respawn(cfg.spawnX, spawnY, cfg.spawnZ, cfg.respawnHealth)
+    assertEquals(20.0f, player.health, 0.001f)
+    assertEquals(24.5f, player.x, 0.001f)
+    assertEquals(11.0f, player.y, 0.001f)
+    assertEquals(24.5f, player.z, 0.001f)
+  }
+
+  @Test
+  fun testGitHubLiveConfigRepositorySyncsAndPersistsWithoutVersionChange() = runTest {
+    val tempDir = kotlin.io.path.createTempDirectory("nickcraft_live_cfg").toFile()
+    try {
+      var remoteJson: String? = """
+        {
+          "configVersion": 4,
+          "livePatchTitle": "Evento PvP Dobrado",
+          "announcement": "Bônus de dano ativo!",
+          "pvpEnabled": true,
+          "pvpDamageMultiplier": 2.0,
+          "moveSpeed": 0.14,
+          "spawnX": 18.5,
+          "spawnZ": 19.5
+        }
+      """.trimIndent()
+
+      val repo = com.example.minecraft.data.GitHubLiveConfigRepository(
+        cacheDir = tempDir,
+        rawFetcher = { remoteJson }
+      )
+
+      val syncRes = repo.syncFromGitHub()
+      assertTrue(syncRes.isSuccess)
+      assertEquals(4, repo.config.value.configVersion)
+      assertEquals("Evento PvP Dobrado", repo.config.value.livePatchTitle)
+      assertEquals(2.0f, repo.config.value.pvpDamageMultiplier, 0.001f)
+      assertEquals(0.14f, repo.config.value.moveSpeed, 0.001f)
+      assertEquals(18.5f, repo.config.value.spawnX, 0.001f)
+
+      // Recreating repository offline reads cached live_config_cache.json
+      remoteJson = null
+      val offlineRepo = com.example.minecraft.data.GitHubLiveConfigRepository(
+        cacheDir = tempDir,
+        rawFetcher = { null }
+      )
+      assertEquals(4, offlineRepo.config.value.configVersion)
+      assertEquals(0.14f, offlineRepo.config.value.moveSpeed, 0.001f)
+    } finally {
+      tempDir.deleteRecursively()
+    }
+  }
 }

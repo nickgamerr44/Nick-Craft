@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.example.minecraft.data.GitHubLiveConfigRepository
 import com.example.minecraft.data.WorldInfo
 import com.example.minecraft.data.WorldStorage
 import com.example.minecraft.model.VoxelWorld
@@ -66,6 +67,7 @@ fun NickCraftLauncherApp() {
   val context = androidx.compose.ui.platform.LocalContext.current
   val storage = remember { WorldStorage(context) }
   val multiplayerGateway = remember { FirestoreMultiplayerGateway(context) }
+  val liveConfigRepository = remember { GitHubLiveConfigRepository(cacheDir = context.filesDir) }
 
   var currentScreen by remember { mutableStateOf(AppScreen.LAUNCHER) }
   var activeWorldInfo by remember { mutableStateOf<WorldInfo?>(null) }
@@ -89,6 +91,7 @@ fun NickCraftLauncherApp() {
         storage = storage,
         versionTag = activeVersionTag,
         multiplayerGateway = multiplayerGateway,
+        liveConfigRepository = liveConfigRepository,
         onStartGame = { worldName, gameMode, seed, worldId, startAsServer, preloadedWorld, isRemoteClient ->
           val id = worldId ?: "world_${System.currentTimeMillis()}"
           activeWorldInfo = WorldInfo(
@@ -116,6 +119,7 @@ fun NickCraftLauncherApp() {
           versionTag = activeVersionTag,
           storage = storage,
           multiplayerGateway = multiplayerGateway,
+          liveConfigRepository = liveConfigRepository,
           initialStartAsServer = activeStartAsServer,
           preloadedWorld = activePreloadedWorld,
           isRemoteClient = activeIsRemoteClient,

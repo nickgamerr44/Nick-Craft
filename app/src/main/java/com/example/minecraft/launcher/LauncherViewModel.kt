@@ -30,11 +30,21 @@ class LauncherViewModel(
   )
   val uiState: StateFlow<LauncherUiState> = _uiState.asStateFlow()
 
+  private var lastFetchTimeMs: Long = 0L
+
   init {
     refreshVersions()
   }
 
+  fun refreshIfStale(minIntervalMs: Long = 15_000L) {
+    val now = System.currentTimeMillis()
+    if (now - lastFetchTimeMs >= minIntervalMs && _uiState.value.syncStatus !is RepoSyncStatus.Loading) {
+      refreshVersions()
+    }
+  }
+
   fun refreshVersions() {
+    lastFetchTimeMs = System.currentTimeMillis()
     viewModelScope.launch {
       _uiState.update { it.copy(syncStatus = RepoSyncStatus.Loading) }
       val result = repository.fetchVersions()

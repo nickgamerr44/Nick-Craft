@@ -133,7 +133,81 @@ class MultiplayerServerRuleTest : FirestoreEmulatorTestBase() {
       ).await()
     }
 
-    // 7. Host sees 5/5 players and can delete server
+    // 7. PvP hit from host to member2 & member2 health=0/respawn=20 updates
+    signInTestUser(hostEmail)
+    val hitDocId = "hit_${System.currentTimeMillis()}"
+    withTimeout(OP_TIMEOUT_MS) {
+      serverRef.collection("player_hits").document(hitDocId).set(
+        mapOf(
+          "attackerUid" to hostUid,
+          "attackerName" to "HostNick",
+          "targetUid" to member2Uid,
+          "damage" to 7.0,
+          "createdAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+    }
+
+    // Self-hit and excessive damage (>20) must be denied by rules
+    assertPermissionDenied {
+      serverRef.collection("player_hits").document("self_${System.currentTimeMillis()}").set(
+        mapOf(
+          "attackerUid" to hostUid,
+          "attackerName" to "HostNick",
+          "targetUid" to hostUid,
+          "damage" to 2.0,
+          "createdAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+    }
+    assertPermissionDenied {
+      serverRef.collection("player_hits").document("excess_${System.currentTimeMillis()}").set(
+        mapOf(
+          "attackerUid" to hostUid,
+          "attackerName" to "HostNick",
+          "targetUid" to member2Uid,
+          "damage" to 50.0,
+          "createdAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+    }
+
+    // Member2 updates own health to 0 (dead) then respawns at spawn with health=20
+    signInTestUser(guestEmails[0])
+    withTimeout(OP_TIMEOUT_MS) {
+      serverRef.collection("players").document(member2Uid).set(
+        mapOf(
+          "uid" to member2Uid,
+          "displayName" to "Jogador2",
+          "x" to 24.5,
+          "y" to 12.0,
+          "z" to 24.5,
+          "yaw" to 15.0,
+          "pitch" to 0.0,
+          "slotIndex" to 1,
+          "health" to 0.0,
+          "isDead" to true,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+      serverRef.collection("players").document(member2Uid).set(
+        mapOf(
+          "uid" to member2Uid,
+          "displayName" to "Jogador2",
+          "x" to 24.5,
+          "y" to 14.0,
+          "z" to 24.5,
+          "yaw" to 0.0,
+          "pitch" to 0.0,
+          "slotIndex" to 1,
+          "health" to 20.0,
+          "isDead" to false,
+          "updatedAt" to FieldValue.serverTimestamp()
+        )
+      ).await()
+    }
+
+    // 8. Host sees 5/5 players and can delete server
     signInTestUser(hostEmail)
     val hostDoc = withTimeout(OP_TIMEOUT_MS) { serverRef.get().await() }
     assertTrue(hostDoc.exists())

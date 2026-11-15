@@ -72,10 +72,29 @@ class Player(
     }
   }
 
-  fun takeDamage(amount: Float) {
-    if (gameMode == GameMode.CREATIVE) return
+  fun takeDamage(amount: Float, bypassCreative: Boolean = false) {
+    if (gameMode == GameMode.CREATIVE && !bypassCreative) return
     hurtTime = 12
     health = (health - amount).coerceAtLeast(0f)
+  }
+
+  fun respawn(
+    spawnX: Float,
+    spawnY: Float,
+    spawnZ: Float,
+    restoreHealth: Float = maxHealth
+  ) {
+    x = spawnX
+    y = spawnY
+    z = spawnZ
+    vx = 0f
+    vy = 0f
+    vz = 0f
+    health = restoreHealth.coerceIn(1f, maxHealth)
+    hunger = 20f
+    oxygen = 20f
+    hurtTime = 0
+    isOnGround = false
   }
 
   fun heal(amount: Float) {
@@ -98,7 +117,10 @@ class Player(
     jumpHeld: Boolean,
     descendHeld: Boolean,
     fixLimbStopAnimation: Boolean = true,
-    fixStrafeDirection: Boolean = true
+    fixStrafeDirection: Boolean = true,
+    walkSpeed: Float = 0.10f,
+    jumpVelocity: Float = 0.26f,
+    gravity: Float = 0.016f
   ) {
     if (hurtTime > 0) hurtTime--
     if (swingProgress > 0f) {
@@ -113,9 +135,9 @@ class Player(
     val rightZ = if (fixStrafeDirection) -sin(radYaw).toFloat() else sin(radYaw).toFloat()
 
     val baseSpeed = when {
-      isFlying -> 0.18f
-      isSneaking -> 0.045f
-      else -> 0.10f
+      isFlying -> (walkSpeed * 1.8f).coerceAtLeast(0.18f)
+      isSneaking -> walkSpeed * 0.45f
+      else -> walkSpeed
     }
 
     val wishX = (forwardX * moveForward + rightX * moveStrafe) * baseSpeed
@@ -153,11 +175,11 @@ class Player(
     } else {
       oxygen = (oxygen + 0.1f).coerceAtMost(20f)
       // Gravity
-      vy -= 0.016f
+      vy -= gravity
       if (vy < -0.55f) vy = -0.55f
 
       if (isOnGround && jumpHeld) {
-        vy = 0.26f // jump impulse
+        vy = jumpVelocity // jump impulse
         isOnGround = false
       }
 

@@ -20,8 +20,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,20 +32,43 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.minecraft.data.GitHubLiveConfigRepository
 import com.example.minecraft.engine.AudioEngine
 import com.example.minecraft.launcher.LauncherViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun TitleScreen(
   onLaunchGame: (versionTag: String) -> Unit
 ) {
   val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  val scope = rememberCoroutineScope()
   val launcherViewModel: LauncherViewModel = viewModel(
     factory = remember(context.filesDir) { LauncherViewModel.factory(context.filesDir) }
   )
+  val liveRepo = remember(context.filesDir) { GitHubLiveConfigRepository(cacheDir = context.filesDir) }
   val uiState by launcherViewModel.uiState.collectAsStateWithLifecycle()
+  val liveConfig by liveRepo.config.collectAsStateWithLifecycle()
+
+  LaunchedEffect(liveRepo) {
+    liveRepo.syncFromGitHub()
+  }
+  DisposableEffect(lifecycleOwner, launcherViewModel, liveRepo) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        launcherViewModel.refreshIfStale()
+        scope.launch { liveRepo.syncIfStale() }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   val openExternalUrl: (String) -> Unit = { url ->
     runCatching {
@@ -108,6 +134,19 @@ fun TitleScreen(
               fontSize = 12.sp,
               modifier = Modifier.padding(horizontal = 8.dp)
             )
+
+            val liveNotice = liveConfig.announcement.ifBlank { liveConfig.motd }
+            if (liveNotice.isNotBlank()) {
+              Spacer(modifier = Modifier.height(8.dp))
+              Text(
+                text = liveNotice,
+                color = Color(0xFFA7F3D0),
+                fontSize = 11.sp,
+                modifier = Modifier
+                  .padding(horizontal = 8.dp)
+                  .testTag("launcher_live_notice")
+              )
+            }
 
             Spacer(modifier = Modifier.weight(1f))
             Row(

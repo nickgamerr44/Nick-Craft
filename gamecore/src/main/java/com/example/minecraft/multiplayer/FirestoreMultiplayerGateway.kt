@@ -66,7 +66,18 @@ data class PlayerPresenceDoc(
   val yaw: Double = 0.0,
   val pitch: Double = 0.0,
   val slotIndex: Int = 0,
+  val health: Double = 20.0,
+  val isDead: Boolean = false,
   @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+data class PlayerHitDoc(
+  @DocumentId val id: String = "",
+  val attackerUid: String = "",
+  val attackerName: String = "",
+  val targetUid: String = "",
+  val damage: Double = 2.0,
+  @ServerTimestamp val createdAt: Timestamp? = null
 )
 
 data class BlockEditDoc(
@@ -122,6 +133,9 @@ class FirestoreMultiplayerGateway(
   private val _remoteBlockEdits = MutableSharedFlow<BlockEditEvent>(extraBufferCapacity = 64)
   override val remoteBlockEdits: SharedFlow<BlockEditEvent> = _remoteBlockEdits.asSharedFlow()
 
+  private val _remotePlayerHits = MutableSharedFlow<PlayerHitEvent>(extraBufferCapacity = 32)
+  override val remotePlayerHits: SharedFlow<PlayerHitEvent> = _remotePlayerHits.asSharedFlow()
+
   private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
     val user = firebaseAuth.currentUser
     _currentUserUid.value = user?.uid
@@ -132,11 +146,14 @@ class FirestoreMultiplayerGateway(
   private var serverDocReg: ListenerRegistration? = null
   private var playersReg: ListenerRegistration? = null
   private var editsReg: ListenerRegistration? = null
+  private var hitsReg: ListenerRegistration? = null
   private var hostedWorldRef: WeakReference<VoxelWorld>? = null
   private var hostEditCounter: Int = 0
   private var mySlotIndex: Int = 0
   private var lastPosePublishMs: Long = 0L
+  private var sessionJoinedAtMs: Long = 0L
   private val seenEditIds = HashSet<String>()
+  private val seenHitIds = HashSet<String>()
 
   init {
     auth.addAuthStateListener(authListener)
@@ -402,6 +419,7 @@ class FirestoreMultiplayerGateway(
   private fun attachServerListeners(serverId: String, localUid: String) {
     val user = auth.currentUser ?: return
     val serverRef = db.collection("world_servers").document(serverId)
+    sessionJoinedAtMs = System.currentTimeMillis()
 
     serverDocReg = serverRef.addSnapshotListener { snap, err ->
       if (err != null) {
@@ -441,7 +459,9 @@ class FirestoreMultiplayerGateway(
           z = p.z.toFloat(),
           yaw = p.yaw.toFloat(),
           pitch = p.pitch.toFloat(),
-          slotIndex = p.slotIndex.coerceIn(0, MAX_MULTIPLAYER_PLAYERS - 1)
+          slotIndex = p.slotIndex.coerceIn(0, MAX_MULTIPLAYER_PLAYERS - 1),
+          health = p.health.toFloat().coerceIn(0f, 20f),
+          isDead = p.isDead || p.health <= 0.0
         )
       }
       val names = docs.mapNotNull { it.displayName.takeIf { n -> n.isNotBlank() } }.distinct()
@@ -477,15 +497,42 @@ class FirestoreMultiplayerGateway(
           }
         }
       }
+
+    hitsReg = serverRef.collection("player_hits")
+      .orderBy("createdAt", Query.Direction.ASCENDING)
+      .limitToLast(50)
+      .addSnapshotListener { snap, err ->
+        if (err != null) {
+          handleFirestoreError(err, "listen_hits", "world_servers/$serverId/player_hits", user.uid)
+          return@addSnapshotListener
+        }
+        for (doc in snap?.documents.orEmpty()) {
+          if (!seenHitIds.add(doc.id)) continue
+          val hit = doc.toObject(PlayerHitDoc::class.java) ?: continue
+          val createdMs = hit.createdAt?.toDate()?.time
+          // Skip historical hits from before this player joined the session
+          if (createdMs != null && createdMs < sessionJoinedAtMs - 10_000L) continue
+          if (hit.targetUid == localUid && hit.attackerUid != localUid) {
+            _remotePlayerHits.tryEmit(
+              PlayerHitEvent(
+                targetPlayerId = hit.targetUid,
+                attackerId = hit.attackerUid,
+                attackerName = hit.attackerName.ifBlank { "Jogador" },
+                damage = hit.damage.toFloat().coerceIn(0.5f, 20f)
+              )
+            )
+          }
+        }
+      }
   }
 
-  override fun publishLocalPlayerState(player: Player) {
+  override fun publishLocalPlayerState(player: Player, forceImmediate: Boolean) {
     val state = _sessionState.value
     val user = auth.currentUser ?: return
     if (!state.isActive || state.serverId.isBlank()) return
 
     val now = System.currentTimeMillis()
-    if (now - lastPosePublishMs < 180L) return
+    if (!forceImmediate && now - lastPosePublishMs < 180L) return
     lastPosePublishMs = now
 
     val name = (_currentUserName.value ?: "Jogador").take(40)
@@ -512,6 +559,8 @@ class FirestoreMultiplayerGateway(
       "yaw" to player.yaw.toDouble(),
       "pitch" to player.pitch.toDouble(),
       "slotIndex" to slotIndex.coerceIn(0, MAX_MULTIPLAYER_PLAYERS - 1),
+      "health" to player.health.toDouble().coerceIn(0.0, 20.0),
+      "isDead" to (player.health <= 0f),
       "updatedAt" to FieldValue.serverTimestamp()
     )
     db.collection("world_servers").document(serverId)
@@ -560,6 +609,34 @@ class FirestoreMultiplayerGateway(
     }
   }
 
+  override fun publishPlayerHit(targetPlayerId: String, damage: Float) {
+    val state = _sessionState.value
+    val user = auth.currentUser ?: return
+    if (!state.isActive || state.serverId.isBlank()) return
+    if (targetPlayerId.isBlank() || targetPlayerId == user.uid) return
+
+    val hitId = "h_${System.currentTimeMillis()}_${Random.nextInt(1000, 9999)}"
+    val attackerName = (_currentUserName.value ?: "Jogador").take(40).ifBlank { "Jogador" }
+    val payload = hashMapOf(
+      "attackerUid" to user.uid,
+      "attackerName" to attackerName,
+      "targetUid" to targetPlayerId,
+      "damage" to damage.coerceIn(0.5f, 20.0f).toDouble(),
+      "createdAt" to FieldValue.serverTimestamp()
+    )
+
+    scope.launch {
+      runCatching {
+        db.collection("world_servers").document(state.serverId)
+          .collection("player_hits").document(hitId)
+          .set(payload)
+          .await()
+      }.onFailure { err ->
+        handleFirestoreError(err, "create", "world_servers/${state.serverId}/player_hits/$hitId", user.uid)
+      }
+    }
+  }
+
   override suspend fun closeOrLeaveServer() {
     val state = _sessionState.value
     val user = auth.currentUser
@@ -567,12 +644,15 @@ class FirestoreMultiplayerGateway(
     serverDocReg?.remove()
     playersReg?.remove()
     editsReg?.remove()
+    hitsReg?.remove()
     serverDocReg = null
     playersReg = null
     editsReg = null
+    hitsReg = null
     hostedWorldRef = null
     hostEditCounter = 0
     seenEditIds.clear()
+    seenHitIds.clear()
 
     if (state.isActive && state.serverId.isNotBlank() && user != null) {
       val serverRef = db.collection("world_servers").document(state.serverId)

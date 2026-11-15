@@ -1,0 +1,17 @@
+{
+  "configVersion": 1,
+  "livePatchTitle": "PvP Multiplayer & Spawn ao Vivo",
+  "announcement": "",
+  "motd": "Atualizações automáticas via GitHub sem precisar trocar a versão!",
+  "pvpEnabled": true,
+  "pvpDamagesCreative": true,
+  "pvpBaseFistDamage": 2.0,
+  "pvpDamageMultiplier": 1.0,
+  "moveSpeed": 0.10,
+  "jumpVelocity": 0.26,
+  "gravity": 0.016,
+  "spawnX": 24.5,
+  "spawnZ": 24.5,
+  "respawnHealth": 20.0,
+  "timeSpeedMultiplier": 1.0
+}
